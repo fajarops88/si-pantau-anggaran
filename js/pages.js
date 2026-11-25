@@ -211,6 +211,8 @@ Pages.formKontrak = function (k, prefill) {
   const m = modal({ title: baru ? 'Tambah Kontrak / SPK' : 'Ubah Kontrak ' + (k.No_SPK || ''), icon: 'kontrak', size: 'lg',
     body: `<form class="fg"><div class="sect">Paket pekerjaan</div>
       ${fld({ name: 'ID_SubKeg', label: 'Sub Kegiatan DPA', type: 'select', value: k.ID_SubKeg, req: true, opts: [['', '— pilih sub kegiatan —']].concat(sks.map((s) => [s.ID_SubKeg, skLabel(s)])) })}
+      <div class="f" id="kPaket"></div>
+      <div class="f"><div class="row"><button type="button" class="btn sm" data-spk>${ic('upload', 'sm')}Isi otomatis dari dokumen SPK (Word/Excel/PDF)</button><input type="file" id="fileSpk" class="hidden" accept=".docx,.xlsx,.xls,.pdf,.txt"><span class="mini">Nomor, tanggal, nilai, penyedia, NPWP ditebak dari teks — periksa sebelum simpan.</span></div></div>
       ${fld({ name: 'No_SPK', label: 'Nomor SPK / Kontrak', value: k.No_SPK, span: 's8', req: true, ph: '027/04/SPK-PPK/DISHUB/2026' })}${fld({ name: 'Tgl_SPK', label: 'Tanggal SPK', value: k.Tgl_SPK, type: 'date', span: 's4', req: true })}
       ${fld({ name: 'Uraian_Pekerjaan', label: 'Uraian Pekerjaan', value: k.Uraian_Pekerjaan, type: 'textarea', rows: 2, req: true })}
       ${fld({ name: 'Nilai_Kontrak', label: 'Nilai Kontrak', value: k.Nilai_Kontrak, type: 'rp', span: 's6', req: true })}${fld({ name: 'Metode', label: 'Metode Pengadaan', value: k.Metode, type: 'select', span: 's6', opts: [['', '— pilih —']].concat(K.METODE.map((x) => [x, x])) })}
@@ -223,16 +225,42 @@ Pages.formKontrak = function (k, prefill) {
       ${fld({ name: 'Nama_Bank', label: 'Bank', value: k.Nama_Bank, span: 's4' })}${fld({ name: 'No_Rekening', label: 'Nomor Rekening', value: k.No_Rekening, span: 's4' })}${fld({ name: 'Nama_Rekening', label: 'Atas Nama', value: k.Nama_Rekening, span: 's4' })}
       ${fld({ name: 'Catatan', label: 'Catatan', value: k.Catatan, type: 'textarea', rows: 2 })}</form>`,
     foot: `${!baru && Can.hapusKontrak() ? `<button class="btn danger" data-del style="margin-right:auto">${ic('trash', 'sm')}Hapus</button>` : ''}<button class="btn" data-x>Batal</button><button class="btn pri" data-save>${ic('save', 'sm')}Simpan Kontrak</button>` });
-  m.el.querySelector('[data-save]').onclick = () => {
+  /* v1.1: paket pengadaan (Instruksi/HPS/Spesifikasi) yang menjadi dasar kontrak */
+  const drawPaket = (idSk) => {
+    const box = m.el.querySelector('#kPaket'); const ps = S.t.pengadaan.filter((p) => p.ID_SubKeg === idSk && (p.ID_Paket === k.ID_Paket || (p.Status !== 'BATAL' && (!p.ID_Kontrak || p.ID_Kontrak === k.ID_Kontrak))));
+    if (!idSk || !ps.length) { box.innerHTML = `<input type="hidden" name="ID_Paket" value=""><div class="hint" style="margin:0">${idSk ? 'Belum ada paket pengadaan (HPS) untuk sub kegiatan ini — kontrak tetap dapat disimpan tanpa paket.' : ''}</div>`; return; }
+    const cur = ps.some((p) => p.ID_Paket === k.ID_Paket) ? k.ID_Paket : '';
+    box.innerHTML = `<label>Paket pengadaan (HPS) — opsional</label>${selectHtml('ID_Paket', [['', '— tanpa paket pengadaan —']].concat(ps.map((p) => [p.ID_Paket, p.Nama_Paket + ' · HPS ' + rp(p.Nilai_HPS)])), cur)}<div class="hint" id="kPaketInfo"></div>`;
+    infoPaket();
+  };
+  const infoPaket = () => { const sel = m.el.querySelector('select[name=ID_Paket]'), inf = m.el.querySelector('#kPaketInfo'); if (!sel || !inf) return; const p = Store.get('pengadaan', sel.value); inf.innerHTML = p ? `HPS ${rp(p.Nilai_HPS)} · ${esc(p.Metode || 'metode belum diisi')} · arsip Instruksi/HPS/Spesifikasi paket ini ikut terhitung di checklist kontrak.` : 'Tautkan bila kontrak ini hasil dari paket pengadaan di menu Pengadaan Barang/Jasa.'; };
+  drawPaket(k.ID_SubKeg);
+  m.el.querySelector('[data-spk]').onclick = () => { const inp = m.el.querySelector('#fileSpk'); inp.onchange = async () => { const fl = inp.files[0]; inp.value = ''; if (!fl) return;
+    try { const g = Impor.tebakSpk(await Impor.teks(fl)), f = m.el.querySelector('form'); let n = 0;
+      Object.keys(g).forEach((key) => { const el = f.elements[key]; if (!el || g[key] === '' || g[key] == null) return; if (el.value) return; el.value = key === 'Nilai_Kontrak' ? fmtN(g[key]) : g[key]; el.dispatchEvent(new Event('input', { bubbles: true })); n++; });
+      toast(n ? n + ' isian terisi dari ' + fl.name + '. Periksa kembali.' : 'Tidak ada isian yang dikenali dari ' + fl.name + '.', n ? 'ok' : 'warn'); } catch (er) { toast(er.message, 'err'); } }; inp.click(); };
+  m.el.addEventListener('change', (e) => {
+    if (e.target.name === 'ID_SubKeg') drawPaket(e.target.value);
+    if (e.target.name === 'ID_Paket') { infoPaket(); const p = Store.get('pengadaan', e.target.value), f = m.el.querySelector('form'); if (p && baru) { if (!f.Uraian_Pekerjaan.value) f.Uraian_Pekerjaan.value = p.Nama_Paket; if (!f.Metode.value && p.Metode) f.Metode.value = p.Metode; } }
+  });
+  m.el.querySelector('[data-save]').onclick = async () => {
     const v = validate(m.el, { ID_SubKeg: req('Sub kegiatan'), No_SPK: req('Nomor SPK'), Tgl_SPK: req('Tanggal SPK'), Uraian_Pekerjaan: req('Uraian'), Nilai_Kontrak: (x) => (x > 0 ? '' : 'Nilai kontrak harus lebih dari 0.'), Tgl_Mulai: req('Tanggal mulai'), Penyedia: req('Penyedia'),
       Tgl_Selesai: (x, a) => (!x ? 'Tanggal selesai wajib diisi.' : a.Tgl_Mulai && x < a.Tgl_Mulai ? 'Tanggal selesai sebelum tanggal mulai.' : '') });
     if (!v) return;
     const sk = Store.get('subkeg', v.ID_SubKeg); const lain = S.t.kontrak.filter((x) => x.ID_SubKeg === v.ID_SubKeg && x.ID_Kontrak !== k.ID_Kontrak).reduce((a, x) => a + num(x.Nilai_Kontrak), 0);
     if (sk && lain + v.Nilai_Kontrak > num(sk.Pagu)) { toast(`Total nilai kontrak (${rp(lain + v.Nilai_Kontrak)}) melebihi pagu sub kegiatan (${rp(sk.Pagu)}).`, 'warn'); return; }
     if (S.t.kontrak.some((x) => norm(x.No_SPK) === norm(v.No_SPK) && x.ID_Kontrak !== k.ID_Kontrak)) { toast('Nomor SPK sudah terdaftar.', 'warn'); return; }
+    v.ID_Paket = v.ID_Paket || '';
+    const pk = v.ID_Paket ? Store.get('pengadaan', v.ID_Paket) : null;
+    if (pk && num(pk.Nilai_HPS) > 0 && v.Nilai_Kontrak > num(pk.Nilai_HPS) && !(await confirmBox(`Nilai kontrak <b>${rp(v.Nilai_Kontrak)}</b> melebihi HPS paket <b>${rp(pk.Nilai_HPS)}</b>. Periksa kembali dasar penetapannya. Tetap simpan?`, { ok: 'Tetap simpan' }))) return;
     const data = Object.assign({}, v, { Tahun: S.tahun }); if (!baru) data.ID_Kontrak = k.ID_Kontrak;
+    const paketLama = k.ID_Paket || '';
     m.close();
-    mutate('kontrak.simpan', data, { table: 'kontrak', temp: data, okMsg: baru ? 'Kontrak ditambahkan.' : 'Kontrak diperbarui.', retry: () => Pages.formKontrak(baru ? null : k, v) });
+    mutate('kontrak.simpan', data, { table: 'kontrak', temp: data, okMsg: baru ? 'Kontrak ditambahkan.' : 'Kontrak diperbarui.', retry: () => Pages.formKontrak(baru ? null : k, v),
+      onOk: (d) => { const row = d.row || {};
+        if (paketLama && paketLama !== row.ID_Paket) { const pl = Store.get('pengadaan', paketLama); if (pl) Store.upsert('pengadaan', Object.assign({}, pl, { ID_Kontrak: '', Status: 'PROSES' })); }
+        if (row.ID_Paket) { const pb = Store.get('pengadaan', row.ID_Paket); if (pb) Store.upsert('pengadaan', Object.assign({}, pb, { ID_Kontrak: row.ID_Kontrak, Status: 'SELESAI' })); }
+        (d.peringatan || []).forEach((w) => toast(w, 'warn')); } });
   };
   const d = m.el.querySelector('[data-del]');
   if (d) d.onclick = async () => {
@@ -301,7 +329,7 @@ Pages.add({
           ${fld({ name: 'Uraian', label: 'Uraian hasil pekerjaan fisik', value: row && row.Uraian, type: 'textarea', rows: 3, ro: !boleh, max: 1000 })}
           ${fld({ name: 'Kendala', label: 'Kendala / hambatan lapangan', value: row && row.Kendala, type: 'textarea', rows: 2, span: 's6', ro: !boleh })}${fld({ name: 'Rencana_Aksi', label: 'Rencana aksi / mitigasi percepatan', value: row && row.Rencana_Aksi, type: 'textarea', rows: 2, span: 's6', ro: !boleh })}
         </form>
-        ${boleh ? `<div class="lbl mt mb-s">Lampiran bukti (SP2D / foto lapangan)</div><div class="drop" id="dropR">${ic('upload')}<b>Tarik file ke sini atau klik untuk memilih</b><span class="mini">PDF/JPG/PNG/ZIP maks. ${esc(S.settings.MAKS_UNGGAH_MB || 10)} MB · tersimpan di Arsip Dokumen</span><div class="prog hidden"><i></i></div></div><input type="file" id="fileR" class="hidden" multiple accept=".pdf,.jpg,.jpeg,.png,.zip">` : `<div class="note info mt">${ic('lock', 'sm')}<div>${row && row.Status === 'TERVERIFIKASI' ? 'Realisasi bulan ini sudah terverifikasi; hanya PIC/Admin yang dapat mengubah.' : 'Anda tidak berwenang menginput realisasi untuk sub kegiatan di bidang ini.'}</div></div>`}
+        ${boleh ? `<div class="lbl mt mb-s">Lampiran bukti (SP2D / foto lapangan)</div><div class="drop" id="dropR">${ic('upload')}<b>Tarik file ke sini atau klik untuk memilih</b><span class="mini">PDF/Word/Excel/JPG/PNG/ZIP maks. ${esc(S.settings.MAKS_UNGGAH_MB || 10)} MB · tersimpan di Arsip Dokumen</span><div class="prog hidden"><i></i></div></div><input type="file" id="fileR" class="hidden" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.zip">` : `<div class="note info mt">${ic('lock', 'sm')}<div>${row && row.Status === 'TERVERIFIKASI' ? 'Realisasi bulan ini sudah terverifikasi; hanya PIC/Admin yang dapat mengubah.' : 'Anda tidak berwenang menginput realisasi untuk sub kegiatan di bidang ini.'}</div></div>`}
         </div>
         ${boleh ? `<div class="card-f" style="justify-content:flex-end">${ic('info', 'sm')}<span style="margin-right:auto">${isPIC ? 'Anda PIC sub kegiatan ini — pengajuan langsung terverifikasi.' : 'Pengajuan diverifikasi oleh PIC: ' + esc(Store.nama(sk.PIC_Email))}</span><button class="btn" data-save="draf">${ic('save', 'sm')}Simpan Draf</button><button class="btn gold" data-save="ajukan">${ic('send', 'sm')}${isPIC ? 'Simpan & Verifikasi' : 'Ajukan Verifikasi'}</button></div>` : ''}</div>
       <div class="card"><div class="card-h"><h3>Riwayat Realisasi Fisik & Keuangan</h3><p>${esc(skLabel(sk))}</p></div><div class="tw"><table class="t"><thead><tr><th>Bulan</th><th class="n">Rencana Fisik</th><th class="n">Real. Fisik</th><th class="c">Deviasi</th><th class="n">Rencana Keu. Kum.</th><th class="n">Real. Bulan (Rp)</th><th class="n">Kumulatif (Rp)</th><th>No. SP2D</th><th>Status</th><th>Diinput</th></tr></thead><tbody>
@@ -430,11 +458,11 @@ const Upload = {
     drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files.length) fn(Array.from(e.dataTransfer.files)); };
   },
   async kirim(files, meta, drop, quiet) {
-    const maks = (num(S.settings.MAKS_UNGGAH_MB) || 10) * 1048576, okExt = /\.(pdf|jpe?g|png|zip|docx|xlsx)$/i;
+    const maks = (num(S.settings.MAKS_UNGGAH_MB) || 10) * 1048576, okExt = /\.(pdf|jpe?g|png|zip|docx?|xlsx?)$/i;
     const bar_ = drop && drop.querySelector('.prog'); const fill = bar_ && bar_.querySelector('i');
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
-      if (!okExt.test(f.name)) { toast(f.name + ': format tidak didukung (PDF, JPG, PNG, ZIP, DOCX, XLSX).', 'warn'); continue; }
+      if (!okExt.test(f.name)) { toast(f.name + ': format tidak didukung (PDF, Word, Excel, JPG, PNG, ZIP).', 'warn'); continue; }
       if (f.size > maks) { toast(f.name + ': ukuran ' + fmtN(f.size / 1048576, 1) + ' MB melebihi batas ' + fmtN(maks / 1048576) + ' MB. Kompres scan terlebih dahulu.', 'warn'); continue; }
       if (bar_) { bar_.classList.remove('hidden'); fill.style.width = '5%'; }
       const b64 = await fileToB64(f, (p) => { if (fill) fill.style.width = (5 + p * 35) + '%'; });
@@ -467,7 +495,7 @@ Pages.add({
         ${kpi({ l: 'Direktori arsip', i: 'folder', v: `${docs.length} <small>berkas · ${fmtN(docs.reduce((a, d) => a + num(d.Ukuran), 0) / 1048576, 1)} MB</small>`, s: 'Google Drive /Arsip/' + esc(S.tahun) + '/' + esc(k.ID_Kontrak) })}</div>
         <div class="card"><div class="tabs">${[['kelengkapan', 'checklist', 'Kelengkapan Dokumen'], ['galeri', 'image', 'Galeri Scan & Arsip'], ['generator', 'docadd', 'Generator Draf Dokumen']].map((t) => `<button data-tab="${t[0]}" class="${st.tab === t[0] ? 'on' : ''}">${ic(t[1], 'sm')}${t[2]}</button>`).join('')}</div><div id="arTab"></div></div>
         ${Can.arsip() ? `<div class="grid g-64 mt"><div class="card"><div class="card-h"><h3>${ic('upload', 'sm')}Unggah scan dokumen baru</h3><p>Pastikan stempel basah dan tanda tangan pejabat terbaca jelas.</p></div><div class="card-b"><div class="fg mb-s"><div class="f s6"><label>Jenis dokumen</label>${selectHtml('jenis', K.JENIS.map((j) => [j[0], j[1]]), st.jenis || (missing[0] ? missing[0].m.Jenis_Dokumen : 'SPK'))}</div><div class="f s6"><label>Keterangan (opsional)</label><input class="in" name="ket" placeholder="mis. Termin I, foto 50%"></div></div>
-          <div class="drop" id="dropA">${ic('upload')}<b>Tarik file scan PDF/JPG ke sini, atau klik untuk memilih</b><span class="mini">Maksimal ${esc(S.settings.MAKS_UNGGAH_MB || 10)} MB per dokumen · tersimpan privat di Drive dinas</span><div class="prog hidden"><i></i></div></div><input type="file" id="fileA" class="hidden" multiple accept=".pdf,.jpg,.jpeg,.png,.zip,.docx,.xlsx"></div></div>
+          <div class="drop" id="dropA">${ic('upload')}<b>Tarik scan PDF/JPG, Word, atau Excel ke sini, atau klik untuk memilih</b><span class="mini">Maksimal ${esc(S.settings.MAKS_UNGGAH_MB || 10)} MB per dokumen · tersimpan privat di Drive dinas</span><div class="prog hidden"><i></i></div></div><input type="file" id="fileA" class="hidden" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.zip"></div></div>
           <div class="card"><div class="card-h"><h3>${ic('info', 'sm')}Standar kepatuhan</h3></div><div class="card-b mini" style="line-height:20px">Dokumen yang diunggah otomatis menandai item checklist dengan jenis yang sama sebagai <b>Lengkap</b>. Gunakan menu <a href="#/checklist?k=${esc(k.ID_Kontrak)}">Checklist Audit</a> untuk menandai "Tidak Perlu", menautkan berkas lain, atau menambah catatan pemeriksa.<br><br>Berkas tidak dibagikan publik: dibuka melalui aplikasi dengan sesi login.</div></div></div>` : ''}`;
       const tb = $('#arTab');
       if (st.tab === 'kelengkapan') tb.innerHTML = `<div class="tw"><table class="t"><thead><tr><th>No</th><th>Tahapan</th><th>Dokumen bukti dukung</th><th>Dasar regulasi</th><th class="c">Status</th><th>Berkas tersimpan</th></tr></thead><tbody>${cl.items.map((it, i) => `<tr class="${it.status === 'BELUM' ? 'flag' : ''}"><td>${i + 1}</td><td><b>${esc(it.m.Tahapan)}</b></td><td>${esc(it.m.Item)}<span class="sub">${esc(jenisNama(it.m.Jenis_Dokumen))}</span></td><td><span class="chip slate">${esc(it.m.Dasar_Regulasi || '-')}</span></td><td class="c">${stChip(K.ST_CL, it.status)}${it.auto ? '<span class="sub">otomatis</span>' : ''}</td><td>${it.doc ? `<a href="#" data-open="${esc(it.doc.ID_Dokumen)}" class="row" style="gap:6px">${ic('pdf', 'sm')}<span>${esc(it.doc.Nama_File)}</span></a><span class="sub">${fmtN(num(it.doc.Ukuran) / 1048576, 1)} MB · ${tgl(String(it.doc.Tgl_Upload).slice(0, 10))}</span>` : `<span class="mini">Belum ada berkas</span>${Can.arsip() && it.status === 'BELUM' ? ` <button class="btn sm" data-up="${esc(it.m.Jenis_Dokumen)}">${ic('upload', 'sm')}Unggah</button>` : ''}`}</td></tr>`).join('')}</tbody></table></div>`;
@@ -692,19 +720,40 @@ const Monev = {
    GENERATOR DOKUMEN dari template (SPK, BAST, Laporan)
    ===================================================================== */
 const Gen = {
+  PAKET: ['INSTRUKSI', 'HPS', 'SPESIFIKASI'],
+  JENIS: { SPK: 'SPK / Kontrak', BAST: 'BAST', LAPORAN: 'Laporan', INSTRUKSI: 'Instruksi PPK', HPS: 'HPS', SPESIFIKASI: 'Spesifikasi Teknis', LAINNYA: 'Lainnya' },
   skema(t) { try { return JSON.parse(t.Skema || '[]'); } catch (e) { return []; } },
-  listHtml(ctx) {
-    const tps = S.t.template.filter((t) => t.Aktif !== 'TIDAK');
-    const docs = S.t.dokumen.filter((d) => (!ctx.ID_Kontrak || d.ID_Kontrak === ctx.ID_Kontrak)).sort((a, b) => String(b.Dibuat).localeCompare(String(a.Dibuat)));
-    return `<div class="note warn mb">${ic('info', 'sm')}<div>Dokumen yang dihasilkan adalah <b>draf siap cetak</b>. Tanda tangan tetap basah: cetak → tandatangani → scan → unggah ke Arsip Dokumen. Template disusun dari kerangka umum dan wajib direview bagian hukum/PBJ sebelum dipakai resmi.</div></div>
-      ${tps.length ? `<div class="docs mb">${tps.map((t) => `<div class="doc"><div class="di oth">${ic('docadd')}</div><div style="flex:1"><b>${esc(t.Nama)}</b><small>Jenis ${esc(t.Jenis)} · v${esc(t.Versi || 1)} · ${this.skema(t).length} isian</small>${Can.generate() ? `<div class="acts"><button class="btn sm pri" data-gen="${esc(t.ID_Template)}">${ic('docadd', 'sm')}Buat dokumen</button></div>` : ''}</div></div>`).join('')}</div>` : `<div class="empty">${ic('doc')}<b>Belum ada template dokumen</b><div>Admin dapat mengunggah template SPK/BAST/Laporan (.docx) di menu Pengaturan → Template Dokumen.</div>${Can.admin() ? '<a class="btn gold mt" href="#/pengaturan?tab=template">' + ic('upload', 'sm') + 'Unggah template</a>' : ''}</div>`}
-      <div class="lbl mb-s">Riwayat dokumen yang dihasilkan (${docs.length})</div>
-      ${docs.length ? `<div class="tw"><table class="t light"><thead><tr><th>Dokumen</th><th>Nomor</th><th>Terkait</th><th>Dibuat</th><th></th></tr></thead><tbody>${docs.map((d) => { const t = Store.get('template', d.ID_Template) || {}; const k = Store.get('kontrak', d.ID_Kontrak); const s = Store.get('subkeg', d.ID_SubKeg); return `<tr><td><b>${esc(t.Nama || d.Jenis)}</b><span class="sub">${esc(d.Jenis)}</span></td><td class="mono">${esc(d.Nomor || '-')}</td><td>${esc(k ? k.No_SPK : s ? s.Nama_SubKegiatan : '-')}</td><td>${esc(Store.nama(d.Oleh))}<span class="sub">${tgl(String(d.Dibuat).slice(0, 10))}</span></td><td class="acts">${d.File_Pdf ? `<button class="btn sm" data-dok="${esc(d.ID)}" data-fmt="pdf">${ic('pdf', 'sm')}PDF</button>` : ''} ${d.File_Docs ? `<button class="btn sm" data-dok="${esc(d.ID)}" data-fmt="docx">${ic('doc', 'sm')}DOCX</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="mini">Belum ada dokumen.</p>'}`;
+  /** Template yang relevan: paket pengadaan → Instruksi/HPS/Spesifikasi(+Lainnya); konteks lain → selain ketiganya */
+  tplFor(ctx) {
+    return S.t.template.filter((t) => t.Aktif !== 'TIDAK' && (ctx.jenis ? t.Jenis === ctx.jenis : ctx.ID_Paket ? this.PAKET.concat('LAINNYA').indexOf(t.Jenis) > -1 : this.PAKET.indexOf(t.Jenis) < 0));
   },
-  unduh(id, fmt) { const d = Store.get('dokumen', id); if (!d) return; bukaBerkas('berkas.ambil', { fileId: fmt === 'pdf' ? d.File_Pdf : d.File_Docs, format: fmt }, fmt === 'pdf' ? 'lihat' : 'unduh'); },
+  isSheets(x) { return (x && x.Engine) === 'sheets'; },
+  listHtml(ctx) {
+    const tps = this.tplFor(ctx);
+    const docs = S.t.dokumen.filter((d) => (ctx.ID_Paket ? d.ID_Paket === ctx.ID_Paket : !ctx.ID_Kontrak || d.ID_Kontrak === ctx.ID_Kontrak)).sort((a, b) => String(b.Dibuat).localeCompare(String(a.Dibuat)));
+    const btn = (d) => `${d.File_Pdf ? `<button class="btn sm" data-dok="${esc(d.ID)}" data-fmt="pdf">${ic('pdf', 'sm')}PDF</button>` : ''} ${this.isSheets(d) ? `<button class="btn sm" data-dok="${esc(d.ID)}" data-fmt="xlsx">${ic('excel', 'sm')}XLSX</button>` : d.File_Docs ? `<button class="btn sm" data-dok="${esc(d.ID)}" data-fmt="docx">${ic('doc', 'sm')}DOCX</button>` : ''}`;
+    return `<div class="note warn mb">${ic('info', 'sm')}<div>Dokumen yang dihasilkan adalah <b>draf siap cetak</b> (Word/Excel + PDF). Tanda tangan tetap basah: cetak → tandatangani → scan → unggah ke Arsip Dokumen. Template disusun dari kerangka umum dan wajib direview bagian hukum/PBJ sebelum dipakai resmi.</div></div>
+      ${tps.length ? `<div class="docs mb">${tps.map((t) => `<div class="doc"><div class="di oth">${ic(this.isSheets(t) ? 'excel' : 'docadd')}</div><div style="flex:1"><b>${esc(t.Nama)}</b><small>${esc(this.JENIS[t.Jenis] || t.Jenis)} · ${this.isSheets(t) ? 'Excel' : 'Word'} · v${esc(t.Versi || 1)} · ${this.skema(t).length} isian</small>${Can.generate() ? `<div class="acts"><button class="btn sm pri" data-gen="${esc(t.ID_Template)}">${ic('docadd', 'sm')}Buat dokumen</button></div>` : ''}</div></div>`).join('')}</div>` : `<div class="empty">${ic('doc')}<b>Belum ada template dokumen${ctx.ID_Paket ? ' pengadaan' : ''}</b><div>Admin dapat mengunggah template ${ctx.ID_Paket ? 'Instruksi/HPS/Spesifikasi' : 'SPK/BAST/Laporan'} (Word, Excel, atau PDF) di menu Pengaturan → Template Dokumen.</div>${Can.admin() ? '<a class="btn gold mt" href="#/pengaturan?tab=template">' + ic('upload', 'sm') + 'Unggah template</a>' : ''}</div>`}
+      <div class="lbl mb-s">Riwayat dokumen yang dihasilkan (${docs.length})</div>
+      ${docs.length ? `<div class="tw"><table class="t light"><thead><tr><th>Dokumen</th><th>Nomor</th><th>Terkait</th><th>Dibuat</th><th></th></tr></thead><tbody>${docs.map((d) => { const t = Store.get('template', d.ID_Template) || {}; const k = Store.get('kontrak', d.ID_Kontrak); const p = d.ID_Paket ? Store.get('pengadaan', d.ID_Paket) : null; const s = Store.get('subkeg', d.ID_SubKeg); return `<tr><td><b>${esc(t.Nama || d.Jenis)}</b><span class="sub">${esc(this.JENIS[d.Jenis] || d.Jenis)}</span></td><td class="mono">${esc(d.Nomor || '-')}</td><td>${esc(p ? p.Nama_Paket : k ? k.No_SPK : s ? s.Nama_SubKegiatan : '-')}</td><td>${esc(Store.nama(d.Oleh))}<span class="sub">${tgl(String(d.Dibuat).slice(0, 10))}</span></td><td class="acts">${btn(d)}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="mini">Belum ada dokumen.</p>'}`;
+  },
+  unduh(id, fmt) {
+    const d = Store.get('dokumen', id); if (!d) return;
+    const fid = fmt === 'pdf' ? d.File_Pdf : fmt === 'xlsx' ? d.File_Xlsx || d.File_Docs : d.File_Docs;
+    bukaBerkas('berkas.ambil', { fileId: fid, format: fmt }, fmt === 'pdf' ? 'lihat' : 'unduh');
+  },
+  /** Konteks data: kontrak, paket pengadaan, sub kegiatan (saling melengkapi) */
+  konteks(ctx) {
+    const k0 = ctx.ID_Kontrak ? Store.get('kontrak', ctx.ID_Kontrak) : null;
+    const pid = ctx.ID_Paket || (k0 && k0.ID_Paket) || '';
+    const p = pid ? Store.get('pengadaan', pid) || null : null;
+    const k = k0 || (p && p.ID_Kontrak ? Store.get('kontrak', p.ID_Kontrak) || null : null);
+    const sk = Store.get('subkeg', (k && k.ID_SubKeg) || (p && p.ID_SubKeg) || ctx.ID_SubKeg) || null;
+    return { k, p, sk };
+  },
   /** Nilai otomatis dari data aplikasi */
   prefill(ctx) {
-    const st = S.settings, k = ctx.ID_Kontrak ? Store.get('kontrak', ctx.ID_Kontrak) : null, sk = Store.get('subkeg', (k && k.ID_SubKeg) || ctx.ID_SubKeg) || null;
+    const st = S.settings, c = this.konteks(ctx), k = c.k, p = c.p, sk = c.sk;
     const pic = sk ? Store.user(sk.PIC_Email) || {} : {}, at = pic.Atasan_Email ? Store.user(pic.Atasan_Email) || {} : {};
     const tw = num(ctx.tw || st.TRIWULAN_AKTIF) || 1, d = new Date();
     const v = { INSTITUSI_NAMA: st.NAMA_INSTANSI, INSTITUSI_ALAMAT: st.ALAMAT_INSTANSI, TEMPAT: st.KOTA, TAHUN: S.tahun, TANGGAL: todayISO(), HARI: K.HARI[d.getDay()],
@@ -715,45 +764,71 @@ const Gen = {
       Object.assign(v, { NAMA_PROGRAM: sk.Nama_Program, NAMA_KEGIATAN: sk.Nama_Kegiatan, NAMA_SUBKEGIATAN: sk.Nama_SubKegiatan, KODE_SUBKEG: sk.Kode_SubKeg, SUMBER_DANA: sk.Sumber_Dana, BIDANG: sk.Bidang, PAGU: num(sk.Pagu),
         NAMA_PEJABAT_1: pic.Nama, JABATAN_1: pic.Jabatan, NIP_1: pic.NIP, NAMA_PIMPINAN: at.Nama, JABATAN_PIMPINAN: at.Jabatan, NIP_PIMPINAN: at.NIP,
         PERSEN_SELESAI: fmtN(s.fisik, 1), CAPAIAN_UTAMA: last.Uraian, KENDALA: last.Kendala, RENCANA_TINDAK_LANJUT: last.Rencana_Aksi }); }
+    if (p) {
+      const items = PK.items(p.ID_Paket), h = PK.hitung(items, p.PPN_Persen), hps = num(p.Nilai_HPS) || h.total;
+      const ppk = Store.user(p.Email_PPK) || {}, pp = Store.user(p.Email_Pejabat_Pengadaan) || {};
+      Object.assign(v, { NAMA_PAKET: p.Nama_Paket, JENIS_PENGADAAN: PK.JENIS[p.Jenis_Pengadaan] || p.Jenis_Pengadaan, METODE: p.Metode || v.METODE, PAGU_PAKET: num(p.Pagu_Paket),
+        NILAI_HPS: hps, JUMLAH_SEBELUM_PPN: h.sub, NILAI_PPN: Math.max(0, hps - h.sub), PPN_PERSEN: num(p.PPN_Persen), JUMLAH_ITEM: items.length, LOKASI: p.Lokasi, JANGKA_WAKTU: p.Jangka_Waktu,
+        NOMOR_INSTRUKSI: p.Nomor_Instruksi, TGL_INSTRUKSI: p.Tgl_Instruksi, ISI_INSTRUKSI: p.Isi_Instruksi,
+        NAMA_PPK: ppk.Nama, NIP_PPK: ppk.NIP, JABATAN_PPK: ppk.Jabatan, NAMA_PEJABAT_PENGADAAN: pp.Nama, NIP_PEJABAT_PENGADAAN: pp.NIP, JABATAN_PEJABAT_PENGADAAN: pp.Jabatan,
+        SUBTOTAL: h.sub, TOTAL_JUMLAH: h.sub, TOTAL_HPS: hps });
+    } else Object.assign(v, this.totalReal(ctx));
     if (ctx.email) { const u = Store.user(ctx.email) || {}, a2 = Store.user(u.Atasan_Email) || {}; const ev = S.t.evaluasi.find((x) => norm(x.Email_Pejabat) === norm(ctx.email) && x.Triwulan === tw) || {};
       Object.assign(v, { NAMA_PEJABAT_1: u.Nama, JABATAN_1: u.Jabatan, NIP_1: u.NIP, BIDANG: u.Bidang, NAMA_PIMPINAN: a2.Nama, JABATAN_PIMPINAN: a2.Jabatan, NIP_PIMPINAN: a2.NIP, ARAHAN_PIMPINAN: ev.Arahan }); }
     return v;
   },
-  /** Baris blok REALISASI (lingkup pejabat, bidang, atau satu sub kegiatan) */
-  blokRows(ctx) {
+  /** Kunci blok yang diisi dari item HPS paket (selain itu: baris realisasi) */
+  blokItem(kunci) { return /ITEM|HPS|BARANG|SPEK|RINCIAN/.test(String(kunci || '').toUpperCase()); },
+  lingkup(ctx) { return ctx.email ? skLingkup(ctx.email) : ctx.ID_SubKeg ? [Store.get('subkeg', ctx.ID_SubKeg)].filter(Boolean) : Calc.subkeg({ bidang: ctx.bidang }); },
+  /** Total tabel realisasi untuk {{TOTAL_PAGU}}, {{TOTAL_KEUANGAN}}, {{TOTAL_FISIK}} (fisik tertimbang pagu) */
+  totalReal(ctx) {
+    const tw = num(ctx.tw || S.settings.TRIWULAN_AKTIF) || 1; let pg = 0, ku = 0, fw = 0;
+    this.lingkup(ctx).forEach((s) => { const x = Calc.sk(s, tw * 3); pg += num(x.pagu); ku += num(x.keu); fw += num(x.fisik) * num(x.pagu); });
+    return { TOTAL_PAGU: pg, TOTAL_KEUANGAN: ku, TOTAL_FISIK: fmtN(pg ? fw / pg : 0, 1) };
+  },
+  blokRows(ctx, kunci) {
+    if (this.blokItem(kunci)) {
+      const p = this.konteks(ctx).p; if (!p) return [];
+      return PK.items(p.ID_Paket).map((x, i) => ({ NO: i + 1, URAIAN: x.Uraian, SPESIFIKASI: x.Spesifikasi, VOLUME: num(x.Volume), SATUAN: x.Satuan, HARGA_SATUAN: num(x.Harga_Satuan), JUMLAH: Math.round(num(x.Volume) * num(x.Harga_Satuan)), SUMBER_HARGA: x.Sumber_Harga, KETERANGAN: x.Keterangan }));
+    }
     const tw = num(ctx.tw || S.settings.TRIWULAN_AKTIF) || 1;
-    const list = ctx.email ? skLingkup(ctx.email) : ctx.ID_SubKeg ? [Store.get('subkeg', ctx.ID_SubKeg)].filter(Boolean) : Calc.subkeg({ bidang: ctx.bidang });
-    return list.sort(byKey('Kode_SubKeg')).map((s, i) => { const x = Calc.sk(s, tw * 3); return { NO: i + 1, KEGIATAN: s.Nama_SubKegiatan, KODE: s.Kode_SubKeg, INDIKATOR: s.Indikator, TARGET: s.Target, SATUAN: s.Satuan, PAGU: x.pagu, FISIK: fmtN(x.fisik, 1), KEUANGAN: x.keu, DEVIASI: fmtN(x.dev, 1) }; });
+    return this.lingkup(ctx).sort(byKey('Kode_SubKeg')).map((s, i) => { const x = Calc.sk(s, tw * 3); return { NO: i + 1, KEGIATAN: s.Nama_SubKegiatan, KODE: s.Kode_SubKeg, INDIKATOR: s.Indikator, TARGET: s.Target, SATUAN: s.Satuan, PAGU: x.pagu, FISIK: fmtN(x.fisik, 1), KEUANGAN: x.keu, DEVIASI: fmtN(x.dev, 1) }; });
   },
   open(ctx) {
     ctx = Object.assign({}, ctx);
-    const tps = S.t.template.filter((t) => t.Aktif !== 'TIDAK');
-    if (!tps.length) { toast('Belum ada template dokumen. Admin dapat mengunggahnya di Pengaturan → Template Dokumen.', 'warn'); return; }
-    const t = Store.get('template', ctx.ID_Template) || tps[0];
+    const tps = this.tplFor(ctx);
+    if (!tps.length) { toast('Belum ada template ' + (ctx.jenis ? (this.JENIS[ctx.jenis] || ctx.jenis) : 'dokumen') + '. Admin dapat mengunggahnya (Word/Excel/PDF) di Pengaturan → Template Dokumen.', 'warn'); return; }
+    const paketMode = !!ctx.ID_Paket;
     const kontrakOpts = [['', '— tidak terkait kontrak —']].concat(S.t.kontrak.map((k) => [k.ID_Kontrak, k.No_SPK + ' — ' + k.Penyedia]));
+    const paketOpts = S.t.pengadaan.filter((p) => p.Status !== 'BATAL' || p.ID_Paket === ctx.ID_Paket).sort(byKey('Nama_Paket')).map((p) => [p.ID_Paket, p.Nama_Paket]);
     const pejOpts = [['', '— pilih —']].concat(S.t.pengguna.filter((u) => skLingkup(u.Email).length).map((u) => [u.Email, u.Nama]));
-    const m = modal({ title: 'Buat Draf Dokumen', icon: 'docadd', size: 'lg', body: '<div id="genBody"></div>', foot: `<span class="mini" style="margin-right:auto">Hasil: Google Docs + PDF di Drive dinas</span><button class="btn" data-x>Batal</button><button class="btn pri" data-go>${ic('docadd', 'sm')}Buat Dokumen</button>` });
+    const m = modal({ title: 'Buat Draf Dokumen', icon: 'docadd', size: 'lg', body: '<div id="genBody"></div>', foot: `<span class="mini" id="genOut" style="margin-right:auto"></span><button class="btn" data-x>Batal</button><button class="btn pri" data-go>${ic('docadd', 'sm')}Buat Dokumen</button>` });
+    const area = (kk) => /CATATAN|URAIAN|ARAHAN|KENDALA|CAPAIAN|ALAMAT|RENCANA|DAFTAR|ISI|SPESIFIKASI|INSTRUKSI$|KETERANGAN/.test(kk);
     const draw = (tpl) => {
-      const sk = this.skema(tpl), pre = this.prefill(ctx), blokRows = this.blokRows(ctx);
+      const sk = this.skema(tpl), pre = this.prefill(Object.assign({}, ctx, { jenis: tpl.Jenis }));
       if (tpl.Jenis === 'SPK' && pre.NOMOR_SPK) pre.NOMOR = pre.NOMOR_SPK;
+      if (tpl.Jenis === 'INSTRUKSI' && pre.NOMOR_INSTRUKSI) pre.NOMOR = pre.NOMOR_INSTRUKSI;
       const nonBlok = sk.filter((x) => !x.blok), blok = sk.filter((x) => x.blok);
-      $('#genBody', m.el).innerHTML = `<div class="fg mb"><div class="f s4"><label>Template</label>${selectHtml('tpl', tps.map((x) => [x.ID_Template, x.Nama]), tpl.ID_Template)}</div>
-        <div class="f s4"><label>Kontrak (isi otomatis)</label>${selectHtml('ctxK', kontrakOpts, ctx.ID_Kontrak || '')}</div><div class="f s4"><label>${tpl.Jenis === 'LAPORAN' ? 'Pejabat pelapor' : 'Triwulan'}</label>${tpl.Jenis === 'LAPORAN' ? selectHtml('ctxP', pejOpts, ctx.email || '') : selectHtml('ctxTw', [1, 2, 3, 4].map((x) => [x, 'TW ' + K.ROMAWI[x]]), ctx.tw || S.settings.TRIWULAN_AKTIF || 1)}</div></div>
+      const c2 = paketMode ? `<div class="f s4"><label>Paket pengadaan (isi otomatis)</label>${selectHtml('ctxPk', paketOpts, ctx.ID_Paket)}</div>` : `<div class="f s4"><label>Kontrak (isi otomatis)</label>${selectHtml('ctxK', kontrakOpts, ctx.ID_Kontrak || '')}</div>`;
+      const c3 = tpl.Jenis === 'LAPORAN' ? `<div class="f s4"><label>Pejabat pelapor</label>${selectHtml('ctxP', pejOpts, ctx.email || '')}</div>` : paketMode ? `<div class="f s4"><label>Nilai HPS paket</label><div class="in" style="display:flex;align-items:center;background:var(--nest)">${rp(pre.NILAI_HPS || 0)} <span class="mini" style="margin-left:6px">${pre.JUMLAH_ITEM || 0} item</span></div></div>` : `<div class="f s4"><label>Triwulan</label>${selectHtml('ctxTw', [1, 2, 3, 4].map((x) => [x, 'TW ' + K.ROMAWI[x]]), ctx.tw || S.settings.TRIWULAN_AKTIF || 1)}</div>`;
+      $('#genOut', m.el).textContent = this.isSheets(tpl) ? 'Hasil: Google Sheets → Excel (.xlsx) + PDF di Drive dinas' : 'Hasil: Google Docs → Word (.docx) + PDF di Drive dinas';
+      $('#genBody', m.el).innerHTML = `<div class="fg mb"><div class="f s4"><label>Template</label>${selectHtml('tpl', tps.map((x) => [x.ID_Template, x.Nama + ' (' + (this.isSheets(x) ? 'Excel' : 'Word') + ')']), tpl.ID_Template)}</div>${c2}${c3}</div>
         <div class="note info mb">${ic('info', 'sm')}<div>Isian di bawah sudah diisi otomatis dari data aplikasi bila tersedia. Periksa kembali sebelum membuat dokumen.</div></div>
         <form class="fg" id="genF">${fld({ name: '__NOMOR', label: 'Nomor dokumen', value: pre.NOMOR || '', span: 's6', hint: 'Dipakai untuk {{NOMOR}}' })}
-        ${nonBlok.filter((x) => x.kunci !== 'NOMOR').map((x) => { const val = pre[x.kunci] != null ? pre[x.kunci] : ''; const tipe = x.tipe === 'tanggal' || /^(TGL|TANGGAL)/.test(x.kunci) ? 'date' : x.tipe === 'area' || x.tipe === 'naskah' || /CATATAN|URAIAN|ARAHAN|KENDALA|CAPAIAN|ALAMAT|RENCANA|DAFTAR/.test(x.kunci) ? 'textarea' : x.tipe === 'angka' ? 'num' : 'text';
-          return fld({ name: x.kunci, label: x.label || x.kunci, value: val, type: tipe, rows: 2, span: tipe === 'textarea' ? '' : 's6', hint: '{{' + x.kunci + '}}' + (x.pengubah ? ' · ' + x.pengubah : '') }); }).join('')}</form>
-        ${blok.map((bk) => { const cols = (bk.kolom || []).map((c) => ({ kunci: String(c.kunci).split('.').pop(), label: c.label || c.kunci })); return `<div class="lbl mt mb-s">Tabel berulang {{#${esc(bk.kunci)}}} — ${blokRows.length} baris dari data realisasi</div><div class="tw"><table class="t light" data-blok="${esc(bk.kunci)}"><thead><tr>${cols.map((c) => `<th>${esc(c.label)}</th>`).join('')}</tr></thead><tbody>${blokRows.map((r) => `<tr>${cols.map((c) => `<td><input class="in" data-k="${esc(c.kunci)}" value="${esc(r[c.kunci] != null ? r[c.kunci] : '')}"></td>`).join('')}</tr>`).join('')}</tbody></table></div>`; }).join('')}`;
+        ${nonBlok.filter((x) => x.kunci !== 'NOMOR').map((x) => { const val = pre[x.kunci] != null ? pre[x.kunci] : ''; const tipe = x.tipe === 'tanggal' || /^(TGL|TANGGAL)/.test(x.kunci) ? 'date' : x.tipe === 'area' || x.tipe === 'naskah' || area(x.kunci) ? 'textarea' : x.tipe === 'angka' ? 'num' : 'text';
+          return fld({ name: x.kunci, label: x.label || x.kunci, value: val, type: tipe, rows: x.kunci === 'ISI_INSTRUKSI' ? 8 : 2, span: tipe === 'textarea' ? '' : 's6', hint: '{{' + x.kunci + '}}' + (x.pengubah ? ' · ' + x.pengubah : '') }); }).join('')}</form>
+        ${blok.map((bk) => { const cols = (bk.kolom || []).map((c) => ({ kunci: String(c.kunci).split('.').pop(), label: c.label || c.kunci })); const rows = this.blokRows(ctx, bk.kunci); const isItem = this.blokItem(bk.kunci);
+          return `<div class="lbl mt mb-s">Tabel berulang {{#${esc(bk.kunci)}}} — ${rows.length} baris dari ${isItem ? 'item HPS paket' : 'data realisasi'}${isItem && !rows.length ? ' <span class="c-warn">(pilih paket yang sudah memiliki item)</span>' : ''}</div><div class="tw"><table class="t light" data-blok="${esc(bk.kunci)}"><thead><tr>${cols.map((c) => `<th>${esc(c.label)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${cols.map((c) => { const val = r[c.kunci] != null ? r[c.kunci] : ''; return area(c.kunci) ? `<td><textarea class="in" rows="2" data-k="${esc(c.kunci)}" style="min-width:200px">${esc(val)}</textarea></td>` : `<td><input class="in" data-k="${esc(c.kunci)}" value="${esc(val)}"></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`; }).join('')}`;
     };
-    let cur = t; draw(cur);
-    m.el.addEventListener('change', (e) => { const n = e.target.name; if (n === 'tpl') { cur = Store.get('template', e.target.value); draw(cur); } if (n === 'ctxK') { ctx.ID_Kontrak = e.target.value; draw(cur); } if (n === 'ctxP') { ctx.email = e.target.value; draw(cur); } if (n === 'ctxTw') { ctx.tw = num(e.target.value); draw(cur); } });
+    let cur = tps.find((x) => x.ID_Template === ctx.ID_Template) || tps[0]; draw(cur);
+    m.el.addEventListener('change', (e) => { const n = e.target.name; if (n === 'tpl') { cur = Store.get('template', e.target.value); draw(cur); } if (n === 'ctxK') { ctx.ID_Kontrak = e.target.value; draw(cur); } if (n === 'ctxPk') { ctx.ID_Paket = e.target.value; draw(cur); } if (n === 'ctxP') { ctx.email = e.target.value; draw(cur); } if (n === 'ctxTw') { ctx.tw = num(e.target.value); draw(cur); } });
     m.el.querySelector('[data-go]').onclick = (e) => {
       const isian = formVals($('#genF', m.el)); const Nomor = isian.__NOMOR; delete isian.__NOMOR; isian.NOMOR = Nomor;
       Object.keys(isian).forEach((k2) => { const sk = this.skema(cur).find((x) => x.kunci === k2); if (sk && sk.tipe === 'angka') isian[k2] = num(isian[k2]); });
       const blok = {}; $$('[data-blok]', m.el).forEach((tb) => { blok[tb.dataset.blok] = $$('tbody tr', tb).map((tr) => { const o = {}; $$('[data-k]', tr).forEach((i) => { o[i.dataset.k] = i.value; }); return o; }); });
-      const k = Store.get('kontrak', ctx.ID_Kontrak);
-      mutate('dokumen.generate', { ID_Template: cur.ID_Template, ID_Kontrak: ctx.ID_Kontrak || '', ID_SubKeg: (k && k.ID_SubKeg) || ctx.ID_SubKeg || '', Tahun: S.tahun, Nomor, isian, blok }, { table: 'dokumen', btn: e.target, okMsg: 'Dokumen dibuat.',
-        onOk: (d) => { m.close(); const row = d.row || {}; const mm = modal({ title: 'Dokumen siap', icon: 'check', size: 'sm', body: `<p style="margin:0">Draf <b>${esc(cur.Nama)}</b> sudah dibuat. Cetak, tandatangani basah, lalu unggah scan-nya ke Arsip Dokumen.</p>`, foot: `<button class="btn" data-x>Tutup</button>${row.File_Docs ? `<button class="btn" data-f="docx">${ic('doc', 'sm')}Unduh DOCX</button>` : ''}${row.File_Pdf ? `<button class="btn pri" data-f="pdf">${ic('pdf', 'sm')}Buka PDF</button>` : ''}` }); mm.el.addEventListener('click', (ev) => { const f = ev.target.closest('[data-f]'); if (f) Gen.unduh(row.ID, f.dataset.f); }); } });
+      const c = this.konteks(ctx);
+      mutate('dokumen.generate', { ID_Template: cur.ID_Template, ID_Kontrak: (c.k && ctx.ID_Kontrak) || '', ID_Paket: ctx.ID_Paket || '', ID_SubKeg: (c.sk && c.sk.ID_SubKeg) || ctx.ID_SubKeg || '', Tahun: S.tahun, Nomor, isian, blok }, { table: 'dokumen', btn: e.target, okMsg: 'Dokumen dibuat.',
+        onOk: (d) => { m.close(); const row = d.row || {}; const xl = this.isSheets(row) || this.isSheets(cur); const mm = modal({ title: 'Dokumen siap', icon: 'check', size: 'sm', body: `<p style="margin:0">Draf <b>${esc(cur.Nama)}</b> sudah dibuat. Cetak, tandatangani basah, lalu unggah scan-nya ke Arsip Dokumen${ctx.ID_Paket ? ' (tab Arsip paket)' : ''}.</p>`, foot: `<button class="btn" data-x>Tutup</button>${xl ? `<button class="btn" data-f="xlsx">${ic('excel', 'sm')}Unduh XLSX</button>` : row.File_Docs ? `<button class="btn" data-f="docx">${ic('doc', 'sm')}Unduh DOCX</button>` : ''}${row.File_Pdf ? `<button class="btn pri" data-f="pdf">${ic('pdf', 'sm')}Buka PDF</button>` : ''}` }); mm.el.addEventListener('click', (ev) => { const f = ev.target.closest('[data-f]'); if (f) Gen.unduh(row.ID, f.dataset.f); }); } });
     };
   }
 };
@@ -772,8 +847,9 @@ Pages.add({
       <div class="card mb"><div class="filters"><div class="search">${ic('search')}<input class="in" name="cari" placeholder="Cari nama, NIP, atau email…" value="${esc(st.cari)}"></div>${selectHtml('role', [['', 'Semua Peran']].concat(Object.keys(K.ROLE).map((r) => [r, K.ROLE[r]])), st.role)}${selectHtml('bidang', optBidang(), st.bidang)}${selectHtml('akt', [['', 'Semua Status'], ['YA', 'Aktif'], ['TIDAK', 'Nonaktif']], st.akt)}<div class="row"><button class="btn sm ${st.view === 'tabel' ? 'pri' : ''}" data-v="tabel">${ic('table', 'sm')}Tabel</button><button class="btn sm ${st.view === 'pohon' ? 'pri' : ''}" data-v="pohon">${ic('tree', 'sm')}Struktur</button></div></div></div>
       <div class="card" id="tbl"></div>
       <div class="card mt"><div class="card-b row" style="align-items:flex-start;gap:16px"><div class="kpi-i gold">${ic('shield')}</div><div style="flex:1"><b class="strong">Matriks ketentuan hak akses</b><div class="grid g3 mt">
-        <div class="note info">${ic('medal', 'sm')}<div><b>Hierarki penilaian:</b> pejabat hanya dapat menilai bawahan langsungnya (kolom Atasan Langsung).</div></div><div class="note info">${ic('lock', 'sm')}<div><b>Integritas realisasi:</b> staf mengajukan; hanya PIC sub kegiatan yang memverifikasi.</div></div><div class="note info">${ic('key', 'sm')}<div><b>Kata sandi:</b> disimpan sebagai hash; admin hanya dapat me-reset, tidak dapat melihat.</div></div></div></div></div></div>`;
+        <div class="note info">${ic('medal', 'sm')}<div><b>Hierarki penilaian:</b> pejabat hanya dapat menilai bawahan langsungnya (kolom Atasan Langsung).</div></div><div class="note info">${ic('lock', 'sm')}<div><b>Integritas realisasi:</b> staf mengajukan; hanya PIC sub kegiatan yang memverifikasi.</div></div><div class="note info">${ic('key', 'sm')}<div>${Auth.cfg && Auth.cfg.loginSandi ? '<b>Kata sandi:</b> disimpan sebagai hash; admin hanya dapat me-reset, tidak dapat melihat.' : '<b>Login Google:</b> pegawai masuk dengan akun Google yang emailnya sama persis dengan kolom Email. Tidak ada kata sandi yang disimpan aplikasi.'}</div></div></div></div></div></div>`;
     const roleChip = (r) => chip(K.ROLE[r] || r, r === 'ADMIN' ? 'navy' : r === 'PEJABAT' ? 'info' : r === 'PROGRAM' ? 'gold' : 'slate');
+    const pw = !!(Auth.cfg && Auth.cfg.loginSandi);
     const draw = () => {
       const c = norm(st.cari);
       const rows = all.filter((u) => (!st.role || u.Role === st.role) && (!st.bidang || sameBidang(u.Bidang, st.bidang)) && (!st.akt || (u.Aktif || 'YA') === st.akt) && (!c || norm([u.Nama, u.NIP, u.Email, u.Jabatan].join(' ')).indexOf(c) > -1)).sort(byKey('Nama'));
@@ -782,7 +858,7 @@ Pages.add({
         const node = (u, d) => `<div style="padding:8px 0 8px ${d * 26}px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:center">${d ? ic('subdir', 'sm c-mut') : ''}<div class="av ${u.Role === 'PEJABAT' ? 'gold' : 'soft'}" style="width:28px;height:28px;font-size:11px">${initials(u.Nama)}</div><div><b>${esc(u.Nama)}</b> <span class="mini">${esc(u.Jabatan || '')}</span> ${roleChip(u.Role)}</div></div>` + all.filter((x) => norm(x.Atasan_Email) === norm(u.Email)).sort(byKey('Nama')).map((x) => node(x, d + 1)).join('');
         $('#tbl').innerHTML = `<div class="card-h"><h3>${ic('tree', 'sm')}Struktur penilaian berjenjang</h3></div><div class="card-b">${roots.map((u) => node(u, 0)).join('') || emptyBox('Belum ada pengguna', '')}</div>`; return;
       }
-      $('#tbl').innerHTML = rows.length ? `<div class="card-h"><h3>${ic('tree', 'sm')}Daftar pengguna & matriks penilaian</h3></div><div class="tw"><table class="t"><thead><tr><th>Pegawai & NIP</th><th>Email</th><th>Peran</th><th>Jabatan / Bidang</th><th>Atasan langsung (penilai)</th><th class="c">Status</th><th></th></tr></thead><tbody>${rows.map((u) => `<tr class="${u.Aktif === 'TIDAK' ? 'c-mut' : ''}"><td><div class="row" style="flex-wrap:nowrap"><div class="av ${u.Role === 'PEJABAT' ? 'gold' : 'soft'}">${initials(u.Nama)}</div><div><b>${esc(u.Nama)}</b><span class="sub mono">${esc(u.NIP || '-')}</span></div></div></td><td class="mono">${esc(u.Email)}</td><td>${roleChip(u.Role)}${u.Wajib_Ganti_Sandi === 'YA' ? '<span class="sub c-warn">belum ganti sandi</span>' : ''}</td><td>${esc(u.Jabatan || '-')}<span class="sub">${esc(u.Bidang || 'Semua bidang')}</span></td><td>${u.Atasan_Email ? esc(Store.nama(u.Atasan_Email)) + `<span class="sub">${esc((Store.user(u.Atasan_Email) || {}).Jabatan || '')}</span>` : '<span class="mini">—</span>'}</td><td class="c">${u.Aktif === 'TIDAK' ? chip('Nonaktif', 'slate') : chip('Aktif', 'ok')}</td><td class="acts"><button class="btn ghost icon" data-edit="${esc(u.Email)}" title="Ubah">${ic('edit', 'sm')}</button><button class="btn ghost icon" data-reset="${esc(u.Email)}" title="Reset kata sandi">${ic('key', 'sm')}</button></td></tr>`).join('')}</tbody></table></div>` : emptyBox('Tidak ada pengguna yang cocok', '');
+      $('#tbl').innerHTML = rows.length ? `<div class="card-h"><h3>${ic('tree', 'sm')}Daftar pengguna & matriks penilaian</h3></div><div class="tw"><table class="t"><thead><tr><th>Pegawai & NIP</th><th>Email</th><th>Peran</th><th>Jabatan / Bidang</th><th>Atasan langsung (penilai)</th><th class="c">Status</th><th></th></tr></thead><tbody>${rows.map((u) => `<tr class="${u.Aktif === 'TIDAK' ? 'c-mut' : ''}"><td><div class="row" style="flex-wrap:nowrap"><div class="av ${u.Role === 'PEJABAT' ? 'gold' : 'soft'}">${initials(u.Nama)}</div><div><b>${esc(u.Nama)}</b><span class="sub mono">${esc(u.NIP || '-')}</span></div></div></td><td class="mono">${esc(u.Email)}</td><td>${roleChip(u.Role)}${pw && u.Wajib_Ganti_Sandi === 'YA' ? '<span class="sub c-warn">belum ganti sandi</span>' : ''}</td><td>${esc(u.Jabatan || '-')}<span class="sub">${esc(u.Bidang || 'Semua bidang')}</span></td><td>${u.Atasan_Email ? esc(Store.nama(u.Atasan_Email)) + `<span class="sub">${esc((Store.user(u.Atasan_Email) || {}).Jabatan || '')}</span>` : '<span class="mini">—</span>'}</td><td class="c">${u.Aktif === 'TIDAK' ? chip('Nonaktif', 'slate') : chip('Aktif', 'ok')}</td><td class="acts"><button class="btn ghost icon" data-edit="${esc(u.Email)}" title="Ubah">${ic('edit', 'sm')}</button>${pw ? `<button class="btn ghost icon" data-reset="${esc(u.Email)}" title="Reset kata sandi">${ic('key', 'sm')}</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : emptyBox('Tidak ada pengguna yang cocok', '');
     };
     draw();
     el.oninput = debounce((e) => { if (e.target.name === 'cari') { st.cari = e.target.value; draw(); } }, 120);
@@ -809,7 +885,7 @@ Pages.tampilSandi = function (u, sandi) {
 Pages.formUser = function (u, prefill) {
   const baru = !u; u = Object.assign({ Role: 'STAF', Aktif: 'YA' }, u || {}, prefill || {});
   const atasanOpts = [['', '— tidak ada (pimpinan tertinggi) —']].concat(S.t.pengguna.filter((x) => norm(x.Email) !== norm(u.Email) && x.Aktif !== 'TIDAK' && (x.Role === 'PEJABAT' || x.Role === 'ADMIN')).sort(byKey('Nama')).map((x) => [x.Email, x.Nama + (x.Jabatan ? ' — ' + x.Jabatan : '')]));
-  const m = modal({ title: baru ? 'Tambah Pengguna' : 'Ubah Pengguna', icon: 'users', body: `<form class="fg">${fld({ name: 'Email', label: 'Email dinas', value: u.Email, type: 'email', span: 's6', req: true, ro: !baru })}${fld({ name: 'Nama', label: 'Nama lengkap & gelar', value: u.Nama, span: 's6', req: true })}
+  const m = modal({ title: baru ? 'Tambah Pengguna' : 'Ubah Pengguna', icon: 'users', body: `<form class="fg">${fld({ name: 'Email', label: 'Email akun Google', value: u.Email, type: 'email', span: 's6', req: true, ro: !baru, hint: 'Harus sama dengan email yang dipakai untuk login Google' })}${fld({ name: 'Nama', label: 'Nama lengkap & gelar', value: u.Nama, span: 's6', req: true })}
     ${fld({ name: 'NIP', label: 'NIP', value: u.NIP, span: 's6', max: 18, ph: '18 digit' })}${fld({ name: 'Jabatan', label: 'Jabatan', value: u.Jabatan, span: 's6', ph: 'Kepala Seksi …' })}
     ${fld({ name: 'Role', label: 'Peran sistem', type: 'select', value: u.Role, span: 's6', opts: Object.keys(K.ROLE).map((r) => [r, K.ROLE[r]]) })}${fld({ name: 'Bidang', label: 'Bidang (pembatas hak tulis)', type: 'select', value: u.Bidang, span: 's6', opts: [['', 'Semua bidang']].concat(Store.bidangList().map((b) => [b, b])) })}
     ${fld({ name: 'Atasan_Email', label: 'Atasan langsung (pejabat penilai)', type: 'select', value: u.Atasan_Email, span: 's8', opts: atasanOpts })}${fld({ name: 'Aktif', label: 'Status akun', type: 'select', value: u.Aktif, span: 's4', opts: [['YA', 'Aktif'], ['TIDAK', 'Nonaktif']] })}</form>
@@ -831,8 +907,8 @@ Pages.add({
   id: 'pengaturan', title: 'Pengaturan', icon: 'settings', nav: true, group: 'Administrasi Sistem', roles: ['ADMIN'],
   render(el, q, st) {
     st.tab = q.tab || st.tab || 'umum';
-    el.innerHTML = ph({ eyebrow: 'Administrasi Sistem', title: 'Pengaturan Aplikasi', desc: 'Identitas instansi, periode aktif, template dokumen, impor data, dan status kinerja server.' }) +
-      `<div class="card"><div class="tabs">${[['umum', 'settings', 'Umum'], ['template', 'docadd', 'Template Dokumen'], ['import', 'upload', 'Import Data'], ['sistem', 'speed', 'Status Sistem']].map((t) => `<button data-tab="${t[0]}" class="${st.tab === t[0] ? 'on' : ''}">${ic(t[1], 'sm')}${t[2]}</button>`).join('')}</div><div class="card-b" id="pgBody"></div></div>`;
+    el.innerHTML = ph({ eyebrow: 'Administrasi Sistem', title: 'Pengaturan Aplikasi', desc: 'Identitas instansi, periode aktif, template dokumen, impor data, login Google, dan status kinerja server.' }) +
+      `<div class="card"><div class="tabs">${[['umum', 'settings', 'Umum'], ['template', 'docadd', 'Template Dokumen'], ['import', 'upload', 'Import Data'], ['keamanan', 'shield', 'Keamanan & Login'], ['sistem', 'speed', 'Status Sistem']].map((t) => `<button data-tab="${t[0]}" class="${st.tab === t[0] ? 'on' : ''}">${ic(t[1], 'sm')}${t[2]}</button>`).join('')}</div><div class="card-b" id="pgBody"></div></div>`;
     const b = $('#pgBody'); this[st.tab](b, st);
     el.onclick = (e) => { const t = e.target.closest('[data-tab]'); if (t) { st.tab = t.dataset.tab; history.replaceState(null, '', '#/pengaturan'); App.refresh(); } };
   },
@@ -848,25 +924,63 @@ Pages.add({
       const old = Object.assign({}, S.settings); mutate('pengaturan.simpan', v, { btn: t, optimistic: () => { Object.assign(S.settings, v); Store.bump(); Store.saveSoon(); return () => { S.settings = old; }; }, onOk: (d) => { if (d.settings) { S.settings = d.settings; App.chrome(); } }, okMsg: 'Pengaturan disimpan.' }); };
   },
   template(b) {
-    const tps = S.t.template;
-    b.innerHTML = `<div class="note warn mb">${ic('warn', 'sm')}<div>Template berupa dokumen Word/Google Docs berisi placeholder seperti <code>{{NOMOR}}</code>, <code>{{NILAI_KONTRAK|rupiah}}</code>, atau baris tabel <code>{{#REALISASI}}</code>. Unggah file .docx (dikonversi otomatis ke Google Docs) atau tempel tautan Google Docs. Sistem memindai placeholder dan membuat formulir isian otomatis.</div></div>
-      ${tps.length ? `<div class="tw mb"><table class="t light"><thead><tr><th>Nama</th><th>Jenis</th><th>Isian</th><th>Versi</th><th>Diperbarui</th><th></th></tr></thead><tbody>${tps.map((t) => `<tr><td><b>${esc(t.Nama)}</b></td><td>${chip(t.Jenis, 'slate')}</td><td class="mini" style="max-width:360px">${Gen.skema(t).map((x) => esc(x.kunci)).join(', ')}</td><td>v${esc(t.Versi || 1)}</td><td>${tgl(String(t.Diperbarui).slice(0, 10))}</td><td class="acts"><button class="btn sm" data-ganti="${esc(t.ID_Template)}">${ic('upload', 'sm')}Perbarui</button><button class="btn ghost icon" data-hapus="${esc(t.ID_Template)}">${ic('trash', 'sm')}</button></td></tr>`).join('')}</tbody></table></div>` : ''}
-      <div class="card"><div class="card-h"><h3>${ic('upload', 'sm')}Unggah / perbarui template</h3></div><div class="card-b"><form class="fg" id="fTp">${fld({ name: 'Nama', label: 'Nama template', span: 's6', req: true, ph: 'Template SPK Pengadaan' })}${fld({ name: 'Jenis', label: 'Jenis', type: 'select', span: 's3', opts: [['SPK', 'SPK / Kontrak'], ['BAST', 'BAST'], ['LAPORAN', 'Laporan'], ['LAINNYA', 'Lainnya']] })}<input type="hidden" name="ID_Template">${fld({ name: 'url', label: 'Atau tautan Google Docs', span: 's3', ph: 'https://docs.google.com/…' })}</form>
-        <div class="drop mt" id="dropT">${ic('doc')}<b>Tarik file .docx ke sini, atau klik untuk memilih</b><span class="mini">Template_SPK_Kontrak.docx, Template_BAST.docx, Template_Laporan_Triwulanan.docx</span><div class="prog hidden"><i></i></div></div><input type="file" id="fileT" class="hidden" accept=".docx">
-        <div class="row mt"><button class="btn pri" data-kirim>${ic('save', 'sm')}Simpan dari tautan</button><span class="mini">Konversi .docx memerlukan layanan lanjutan Drive API aktif di proyek Apps Script.</span></div></div></div>`;
+    const tps = S.t.template, JN = Gen.JENIS;
+    b.innerHTML = `<div class="note warn mb">${ic('warn', 'sm')}<div>Template berisi placeholder seperti <code>{{NOMOR}}</code>, <code>{{NILAI_HPS|rupiah}}</code>, atau baris tabel berulang <code>{{#ITEM}}</code> … <code>{{ITEM.URAIAN}}</code>. Format yang diterima: <b>Word (.docx)</b> → Google Docs, <b>Excel (.xlsx)</b> → Google Sheets (hasil cetak Excel + PDF), dan <b>PDF</b> → Google Docs lewat OCR (tata letak bisa bergeser — periksa hasilnya). Bisa juga menempel tautan Google Docs/Sheets.</div></div>
+      ${tps.length ? `<div class="tw mb"><table class="t light"><thead><tr><th>Nama</th><th>Jenis</th><th>Format</th><th>Isian</th><th>Versi</th><th>Diperbarui</th><th></th></tr></thead><tbody>${tps.map((t) => `<tr><td><b>${esc(t.Nama)}</b></td><td>${chip(JN[t.Jenis] || t.Jenis, Gen.PAKET.indexOf(t.Jenis) > -1 ? 'gold' : 'slate')}</td><td>${Gen.isSheets(t) ? ic('excel', 'sm') + ' Excel' : ic('doc', 'sm') + ' Word'}</td><td class="mini" style="max-width:360px">${Gen.skema(t).map((x) => esc(x.kunci)).join(', ')}</td><td>v${esc(t.Versi || 1)}</td><td>${tgl(String(t.Diperbarui).slice(0, 10))}</td><td class="acts"><button class="btn sm" data-ganti="${esc(t.ID_Template)}">${ic('upload', 'sm')}Perbarui</button><button class="btn ghost icon" data-hapus="${esc(t.ID_Template)}">${ic('trash', 'sm')}</button></td></tr>`).join('')}</tbody></table></div>` : ''}
+      <div class="card"><div class="card-h"><h3>${ic('upload', 'sm')}Unggah / perbarui template</h3></div><div class="card-b"><form class="fg" id="fTp">${fld({ name: 'Nama', label: 'Nama template', span: 's6', req: true, ph: 'Template HPS Pengadaan' })}${fld({ name: 'Jenis', label: 'Jenis', type: 'select', span: 's3', opts: Object.keys(JN).map((k) => [k, JN[k]]) })}<input type="hidden" name="ID_Template">${fld({ name: 'url', label: 'Atau tautan Google Docs/Sheets', span: 's3', ph: 'https://docs.google.com/…' })}</form>
+        <div class="drop mt" id="dropT">${ic('doc')}<b>Tarik file Word, Excel, atau PDF ke sini, atau klik untuk memilih</b><span class="mini">.docx · .xlsx · .pdf — mis. Template_SPK_Kontrak.docx, Template_HPS.xlsx, Template_Instruksi_PPK.docx</span><div class="prog hidden"><i></i></div></div><input type="file" id="fileT" class="hidden" accept=".docx,.xlsx,.pdf">
+        <div class="row mt"><button class="btn pri" data-kirim>${ic('save', 'sm')}Simpan dari tautan</button><span class="mini">Konversi berkas memerlukan layanan lanjutan Drive API aktif di proyek Apps Script.</span></div></div></div>`;
     const f = $('#fTp');
-    const kirim = async (payload, btn) => { const v = validate(f, { Nama: req('Nama template') }); if (!v) return; const data = Object.assign({ Nama: v.Nama, Jenis: v.Jenis, ID_Template: v.ID_Template || undefined }, payload); const r = await mutate('template.simpan', data, { table: 'template', btn, okMsg: 'Template disimpan & dipindai.' }); if (r.success) { const sk = Gen.skema(r.data.row || {}); toast(sk.length + ' placeholder ditemukan.', 'info'); } };
-    Upload.bind($('#dropT'), $('#fileT'), async (files) => { const fl = files[0]; if (!/\.docx$/i.test(fl.name)) { toast('Hanya file .docx.', 'warn'); return; } if (!f.Nama.value) f.Nama.value = fl.name.replace(/\.docx$/i, '').replace(/_/g, ' '); if (!f.ID_Template.value) { const j = /bast/i.test(fl.name) ? 'BAST' : /lapor/i.test(fl.name) ? 'LAPORAN' : /spk|kontrak/i.test(fl.name) ? 'SPK' : f.Jenis.value; f.Jenis.value = j; } const bar_ = $('#dropT .prog'); bar_.classList.remove('hidden'); bar_.firstChild.style.width = '40%'; await kirim({ base64Docx: await fileToB64(fl), namaFile: fl.name }); bar_.classList.add('hidden'); });
+    const kirim = async (payload, btn) => { const v = validate(f, { Nama: req('Nama template') }); if (!v) return; const data = Object.assign({ Nama: v.Nama, Jenis: v.Jenis, ID_Template: v.ID_Template || undefined }, payload); const r = await mutate('template.simpan', data, { table: 'template', btn, okMsg: 'Template disimpan & dipindai.' }); if (r.success) { const sk = Gen.skema(r.data.row || {}); toast(sk.length + ' placeholder ditemukan.', 'info'); (r.data.peringatan || []).forEach((w) => toast(w, 'warn')); } };
+    const MIME = { docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', pdf: 'application/pdf' };
+    Upload.bind($('#dropT'), $('#fileT'), async (files) => {
+      const fl = files[0], ext = (fl.name.match(/\.(docx|xlsx|pdf)$/i) || [])[1]; if (!ext) { toast('Hanya file .docx, .xlsx, atau .pdf.', 'warn'); return; }
+      if (fl.size > 10 * 1048576) { toast('Berkas template maksimal 10 MB.', 'warn'); return; }
+      if (!f.Nama.value) f.Nama.value = fl.name.replace(/\.(docx|xlsx|pdf)$/i, '').replace(/_/g, ' ');
+      if (!f.ID_Template.value) { const n = fl.name; f.Jenis.value = /instruksi/i.test(n) ? 'INSTRUKSI' : /hps|harga.?perkiraan/i.test(n) ? 'HPS' : /spesifikasi|spek/i.test(n) ? 'SPESIFIKASI' : /bast/i.test(n) ? 'BAST' : /lapor/i.test(n) ? 'LAPORAN' : /spk|kontrak/i.test(n) ? 'SPK' : f.Jenis.value; }
+      const bar_ = $('#dropT .prog'); bar_.classList.remove('hidden'); bar_.firstChild.style.width = '40%';
+      await kirim({ base64File: await fileToB64(fl), namaFile: fl.name, mime: MIME[ext.toLowerCase()] }); bar_.classList.add('hidden');
+    });
     b.onclick = async (e) => {
       const t = e.target.closest('[data-kirim],[data-ganti],[data-hapus]'); if (!t) return;
-      if (t.dataset.kirim != null) { if (!/docs\.google\.com\/document/.test(f.url.value)) { toast('Tempel tautan Google Docs yang valid, atau unggah file .docx.', 'warn'); return; } kirim({ url: f.url.value }, t); }
-      if (t.dataset.ganti) { const tp = Store.get('template', t.dataset.ganti); f.ID_Template.value = tp.ID_Template; f.Nama.value = tp.Nama; f.Jenis.value = tp.Jenis; toast('Unggah .docx baru atau tempel tautan untuk memperbarui "' + tp.Nama + '".', 'info'); f.Nama.focus(); }
+      if (t.dataset.kirim != null) { if (!/docs\.google\.com\/(document|spreadsheets)|drive\.google\.com/.test(f.url.value)) { toast('Tempel tautan Google Docs/Sheets yang valid, atau unggah berkas Word/Excel/PDF.', 'warn'); return; } kirim({ url: f.url.value }, t); }
+      if (t.dataset.ganti) { const tp = Store.get('template', t.dataset.ganti); f.ID_Template.value = tp.ID_Template; f.Nama.value = tp.Nama; f.Jenis.value = tp.Jenis; toast('Unggah berkas baru atau tempel tautan untuk memperbarui "' + tp.Nama + '".', 'info'); f.Nama.focus(); }
       if (t.dataset.hapus) { const tp = Store.get('template', t.dataset.hapus); if (!(await confirmBox(`Hapus template <b>${esc(tp.Nama)}</b>? Dokumen yang sudah dibuat tidak terhapus.`, { danger: true, ok: 'Hapus' }))) return; mutate('template.hapus', { ID_Template: tp.ID_Template }, { optimistic: () => { const o = Store.remove('template', tp.ID_Template); return () => Store.upsert('template', o); }, okMsg: 'Template dihapus.' }); }
     };
   },
-  import(b) { b.innerHTML = ''; Pages.importData('subkeg', b); },
+  import(b) { Pages.importData('subkeg', b); },
+  async keamanan(b) {
+    const asal = location.origin;
+    b.innerHTML = `<div class="grid g2"><div class="card"><div class="card-h"><h3>${ic('shield', 'sm')}Login Google (OAuth 2.0)</h3><p>Pegawai masuk tanpa kata sandi aplikasi, memakai akun Google yang terdaftar di Manajemen User.</p></div><div class="card-b" id="secBox"><div class="sk" style="margin:10px 0"></div><div class="sk" style="margin:10px 0"></div></div></div>
+      <div class="card"><div class="card-h"><h3>${ic('info', 'sm')}Cara membuat Client ID</h3></div><div class="card-b"><ol style="margin:0;padding-left:18px;display:grid;gap:6px">
+        <li>Buka <b>Google Cloud Console → APIs &amp; Services → Credentials</b> (akun pemilik skrip).</li>
+        <li>Siapkan <b>OAuth consent screen</b> (Internal bila memakai Google Workspace dinas; External bila akun Gmail biasa).</li>
+        <li><b>Create credentials → OAuth client ID → Web application</b>.</li>
+        <li>Di <b>Authorized JavaScript origins</b> isi persis: <code>${esc(asal)}</code> <button class="btn sm" data-copy="${esc(asal)}">${ic('doc', 'sm')}Salin</button></li>
+        <li>Salin <b>Client ID</b> (berakhiran <code>.apps.googleusercontent.com</code>) lalu tempel di kolom sebelah dan Simpan.</li></ol>
+        <div class="note info mt">${ic('info', 'sm')}<div>Client ID bukan rahasia (memang dipakai browser), tetapi tetap disimpan di Script Properties server agar bisa diganti tanpa mengubah frontend. Token Google diverifikasi di server (aud, iss, email terverifikasi, kedaluwarsa).</div></div></div></div></div>`;
+    const box = $('#secBox');
+    const draw = (d) => { const c = d.GOOGLE_CLIENT_ID || {};
+      box.innerHTML = `<dl class="kv mb"><dt>Status Client ID</dt><dd>${c.ada ? chip('Terpasang', 'ok') + ' <span class="mono mini">' + esc(c.samar) + '</span>' : chip('Belum diisi', 'err')}</dd><dt>Login kata sandi</dt><dd>${d.loginSandi ? chip('Aktif (cadangan)', 'warn') : chip('Nonaktif — Google saja', 'ok')}</dd><dt>Akses darurat</dt><dd>${chip('Tersedia', 'slate')} <span class="mini">tautan #darurat, tidak ditampilkan di menu</span></dd></dl>
+        <form class="fg" id="fCid" autocomplete="off"><div class="f"><label>Google OAuth Client ID</label><input class="in mono" type="password" name="nilai" autocomplete="off" placeholder="${c.ada ? esc(c.samar) + ' (kosongkan = tidak diubah)' : 'xxxxxxxx.apps.googleusercontent.com'}"><div class="hint">Disimpan di Script Properties server; tidak pernah dikirim balik utuh.</div></div></form>
+        <div class="row mt"><button class="btn pri" data-cid>${ic('save', 'sm')}Simpan Client ID</button>${c.ada ? `<button class="btn ghost" data-cidhapus>${ic('trash', 'sm')}Hapus</button>` : ''}</div>
+        <div class="note warn mt">${ic('warn', 'sm')}<div>Login kata sandi hanya dapat dinyalakan/dimatikan dari editor Apps Script: jalankan <code>aktifkanLoginSandi()</code> atau <code>matikanLoginSandi()</code>. Bawaan: nonaktif.</div></div>`; };
+    const load = async () => { const r = await api('rahasia.status', {}); if (!$('#secBox')) return; if (!r.success) { box.innerHTML = `<div class="note err">${ic('warn', 'sm')}<div>${esc(r.message)}</div></div>`; return; } draw(r.data || {}); };
+    load();
+    b.onclick = async (e) => {
+      const cp = e.target.closest('[data-copy]'); if (cp) { (navigator.clipboard ? navigator.clipboard.writeText(cp.dataset.copy) : Promise.reject()).then(() => toast('Disalin.', 'ok'), () => toast('Salin manual: ' + cp.dataset.copy, 'info')); return; }
+      const sv = e.target.closest('[data-cid],[data-cidhapus]'); if (!sv) return;
+      let nilai;
+      if (sv.dataset.cidhapus != null) { if (!(await confirmBox('Hapus Client ID? Semua pegawai tidak bisa login Google sampai diisi lagi (akses darurat tetap bisa).', { danger: true, ok: 'Hapus' }))) return; nilai = '__HAPUS__'; }
+      else { const inp = $('#fCid [name=nilai]'); nilai = inp.value.trim(); if (!nilai) { toast('Kolom kosong — tidak ada yang diubah.', 'info'); return; } if (!/\.apps\.googleusercontent\.com$/.test(nilai)) { toast('Client ID harus berakhiran .apps.googleusercontent.com', 'warn'); return; } inp.value = ''; }
+      sv.classList.add('busy'); const r = await api('rahasia.simpan', { kunci: 'GOOGLE_CLIENT_ID', nilai }); sv.classList.remove('busy');
+      if (!r.success) { toast(r.message, 'err'); return; }
+      toast('Client ID ' + (nilai === '__HAPUS__' ? 'dihapus.' : 'tersimpan. Uji di jendela penyamaran: tombol "Masuk dengan Google" harus muncul.'), 'ok');
+      Auth.config(true); load();
+    };
+  },
   async sistem(b) {
-    b.innerHTML = `<div class="row mb"><button class="btn" data-ref>${ic('refresh', 'sm')}Muat ulang status</button><button class="btn" data-perf>${ic('speed', 'sm')}Tampilkan Perf.table() di console</button></div><div id="sysBox">${'<div class="sk" style="margin:10px 0"></div>'.repeat(6)}</div>`;
+    b.innerHTML = `<div class="row mb"><button class="btn" data-ref>${ic('refresh', 'sm')}Muat ulang status</button><button class="btn" data-ver>${ic('flag', 'sm')}Riwayat versi</button><button class="btn" data-perf>${ic('speed', 'sm')}Tampilkan Perf.table() di console</button></div><div id="sysBox">${'<div class="sk" style="margin:10px 0"></div>'.repeat(6)}</div>`;
     const load = async () => {
       const r = await api('sistem.status', {}); const box = $('#sysBox'); if (!box) return;
       if (!r.success) { box.innerHTML = `<div class="note err">${ic('warn', 'sm')}<div>${esc(r.message)}</div></div>`; return; }
@@ -877,39 +991,17 @@ Pages.add({
         <div class="note info mt">${ic('info', 'sm')}<div>Data di perangkat ini disinkron otomatis tiap 45 detik saat aktif (3 menit saat diam). Perubahan langsung di Google Sheets akan terlihat setelah cache server berganti versi; gunakan menu ini untuk memeriksa.</div></div>`;
     };
     load();
-    b.onclick = (e) => { if (e.target.closest('[data-ref]')) load(); if (e.target.closest('[data-perf]')) { Perf.table(); Perf.summary(); toast('Lihat tab Console di DevTools (F12).', 'info'); } };
+    b.onclick = (e) => { if (e.target.closest('[data-ref]')) load(); if (e.target.closest('[data-ver]')) Versi.tampil(); if (e.target.closest('[data-perf]')) { Perf.table(); Perf.summary(); toast('Lihat tab Console di DevTools (F12).', 'info'); } };
   }
 });
-/** Import data (dry-run lalu jalankan) — dipakai Perencanaan, User, Pengaturan */
+/** Import data — v1.1: semua lewat Impor.dialog (Excel, Word, PDF, CSV, atau tautan Google Sheets) */
 Pages.importData = function (target, inline) {
-  const tpl = { subkeg: 'Kode_Program;Nama_Program;Kode_Kegiatan;Nama_Kegiatan;Kode_SubKeg;Nama_SubKegiatan;Indikator;Target;Satuan;Pagu;Sumber_Dana;Bidang;PIC_Email;Rencana_TW1;Rencana_TW2;Rencana_TW3;Rencana_TW4',
-    kontrak: 'No_SPK;Kode_SubKeg;Tgl_SPK;Uraian_Pekerjaan;Penyedia;Direktur;Jabatan_Direktur;Alamat_Penyedia;NPWP;Nilai_Kontrak;Metode;Tgl_Mulai;Tgl_Selesai;Status;Nama_Bank;No_Rekening;Nama_Rekening',
-    pengguna: 'Email;Nama;NIP;Jabatan;Role;Bidang;Atasan_Email;Aktif' };
-  const html = `<div class="fg"><div class="f s4"><label>Data tujuan</label>${selectHtml('target', [['subkeg', 'Sub Kegiatan (DPA)'], ['kontrak', 'Kontrak'], ['pengguna', 'Pengguna']].filter((x) => Can.admin() || x[0] !== 'pengguna'), target)}</div>
-    <div class="f s8"><label>Tautan Google Sheets (opsional)</label><input class="in" name="sheetUrl" placeholder="https://docs.google.com/spreadsheets/d/… (hanya dibaca)"></div>
-    <div class="f s4"><label>Nama sheet</label><input class="in" name="namaSheet" placeholder="kosong = sheet pertama"></div><div class="f s8"><label class="check" style="text-transform:none;letter-spacing:0;font-weight:500;margin-top:24px"><input type="checkbox" name="timpa"> Perbarui data yang sudah ada (default: hanya menambah baru)</label></div>
-    <div class="f"><label>Atau tempel CSV (pemisah ; atau ,) — baris pertama = judul kolom</label><textarea class="in mono" name="csv" rows="6" placeholder="${esc(tpl[target])}"></textarea><div class="hint">Judul kolom dicocokkan berdasarkan nama (urutan bebas). <a href="#" data-tpl>Unduh contoh judul kolom</a></div></div></div>
-    <div id="impRes" class="mt"></div>`;
-  const foot = `<button class="btn" data-run="1">${ic('search', 'sm')}Pindai (dry-run)</button><button class="btn pri" data-run="0">${ic('upload', 'sm')}Jalankan Import</button>`;
-  let root;
-  if (inline) { inline.innerHTML = `<div style="max-width:900px">${html}<div class="row mt">${foot}</div></div>`; root = inline; }
-  else root = modal({ title: 'Import Data', icon: 'upload', size: 'lg', body: html, foot: `<button class="btn" data-x>Tutup</button>${foot}` }).el;
-  root.addEventListener('click', async (e) => {
-    if (e.target.closest('[data-tpl]')) { e.preventDefault(); const t = root.querySelector('[name=target]').value; saveBlob(new Blob(['﻿' + tpl[t].replace(/;/g, ';') + '\r\n'], { type: 'text/csv' }), 'contoh_import_' + t + '.csv'); return; }
-    const b = e.target.closest('[data-run]'); if (!b) return;
-    const v = formVals(root); const dry = b.dataset.run === '1';
-    if (!v.csv && !v.sheetUrl) { toast('Tempel CSV atau isi tautan Google Sheets.', 'warn'); return; }
-    if (!dry && !(await confirmBox('Jalankan import ke database? Data baru akan ditambahkan' + (v.timpa ? ' dan data yang sudah ada diperbarui' : '') + '.', { ok: 'Jalankan' }))) return;
-    b.classList.add('busy');
-    const r = await api('import.jalankan', { target: v.target, csv: v.csv, sheetUrl: v.sheetUrl, namaSheet: v.namaSheet, dryRun: dry, timpa: !!v.timpa, tahun: S.tahun });
-    b.classList.remove('busy');
-    const box = root.querySelector('#impRes');
-    if (!r.success) { box.innerHTML = `<div class="note err">${ic('warn', 'sm')}<div>${esc(r.message)}</div></div>`; return; }
-    const d = r.data || {}, rep = d.report || {};
-    box.innerHTML = `<div class="note ${dry ? 'info' : 'ok'}">${ic(dry ? 'info' : 'check', 'sm')}<div><b>${dry ? 'Hasil pindai (belum ada yang ditulis)' : 'Import selesai'}</b> — sumber ${esc(rep.sumber || 0)} baris · ditambah <b>${esc(rep.ditambah || 0)}</b> · diperbarui <b>${esc(rep.diperbarui || 0)}</b> · dilewati ${esc(rep.dilewati || 0)}</div></div>${(d.peringatan || []).length ? `<div class="note warn mt">${ic('warn', 'sm')}<div>${d.peringatan.map(esc).join('<br>')}</div></div>` : ''}`
-      + ((d.sandiAwal || []).length ? `<div class="note warn mt">${ic('key', 'sm')}<div><b>Sandi awal pengguna baru — hanya tampil sekali, catat sekarang.</b><table class="t light mt"><thead><tr><th>Email</th><th>Sandi awal</th></tr></thead><tbody>${d.sandiAwal.map((x) => `<tr><td class="mono">${esc(x.email)}</td><td class="mono">${esc(x.sandi)}</td></tr>`).join('')}</tbody></table></div></div>` : '');
-    if (!dry) { Sync.run({ force: true }); }
-  });
+  if (!inline) return Impor.dialog({ target, sheetUrl: true });
+  const T = [['subkeg', 'wallet', 'Perencanaan Anggaran (RKA/DPA)', 'Sub kegiatan beserta program, kegiatan, pagu, indikator. PDF DPA dibaca otomatis berdasarkan pola kode rekening (mode DPA).'], ['kontrak', 'kontrak', 'Kontrak / SPK', 'Daftar kontrak; Kode Sub Kegiatan dipakai untuk menautkan ke DPA.'], ['pengguna', 'users', 'Pengguna', 'Email akun Google, nama, NIP, jabatan, peran, bidang, email atasan.']].filter((x) => Can.admin() || x[0] !== 'pengguna');
+  inline.innerHTML = `<div class="note info mb">${ic('info', 'sm')}<div>Semua impor menerima <b>Excel (.xlsx/.xls), Word (.docx), PDF, CSV</b>, atau tautan Google Sheets. Berkas dibaca di perangkat ini, Anda mencocokkan kolom, lalu <b>Pindai</b> (tanpa menyimpan) sebelum <b>Jalankan Impor</b>. Impor aman diulang: data dengan kunci yang sama tidak digandakan.</div></div>
+    <div class="grid g3">${T.map((x) => `<div class="card"><div class="card-b"><div class="row mb-s" style="flex-wrap:nowrap"><div class="kpi-i">${ic(x[1])}</div><b class="strong">${x[2]}</b></div><p class="mini" style="margin:0 0 12px">${x[3]}</p><button class="btn pri" data-imp="${x[0]}">${ic('upload', 'sm')}Impor ${x[0] === 'subkeg' ? 'DPA' : x[2]}</button></div></div>`).join('')}</div>
+    <div class="note warn mt">${ic('warn', 'sm')}<div>Pembacaan PDF memakai teks yang tertanam di PDF. PDF hasil scan (gambar) tidak bisa dibaca — gunakan PDF asli dari aplikasi SIPD/Excel, atau ekspor ke Excel terlebih dahulu. Selalu periksa pratinjau sebelum menjalankan impor.</div></div>`;
+  inline.onclick = (e) => { const t = e.target.closest('[data-imp]'); if (t) Impor.dialog({ target: t.dataset.imp, sheetUrl: true }); };
 };
 
 /* =====================================================================
@@ -919,18 +1011,19 @@ Pages.add({
   id: 'profil', title: 'Profil & Keamanan', icon: 'person', nav: true, group: 'Akun', short: 'Akun',
   render(el) {
     const me = S.me, u = Store.user(me.email) || {};
-    el.innerHTML = ph({ eyebrow: 'Akun', title: 'Profil & Keamanan', desc: 'Informasi akun, penggantian kata sandi, dan sesi perangkat.' }) +
+    el.innerHTML = ph({ eyebrow: 'Akun', title: 'Profil & Keamanan', desc: 'Informasi akun, keamanan login, sesi perangkat, dan riwayat versi aplikasi.' }) +
       `<div class="grid g2"><div class="card"><div class="card-h"><h3>${ic('person', 'sm')}Informasi akun</h3></div><div class="card-b"><div class="row mb"><div class="av gold" style="width:52px;height:52px;font-size:18px">${initials(me.nama)}</div><div><b class="strong" style="font-size:17px">${esc(me.nama)}</b><div class="mini">${esc(me.email)}</div></div></div>
         <dl class="kv"><dt>Peran</dt><dd>${esc(K.ROLE[me.role] || me.role)}${me.darurat ? ' ' + chip('Akses darurat', 'err') : ''}</dd><dt>Jabatan</dt><dd>${esc(me.jabatan || u.Jabatan || '-')}</dd><dt>NIP</dt><dd class="mono">${esc(me.nip || u.NIP || '-')}</dd><dt>Bidang</dt><dd>${esc(me.bidang || 'Semua bidang')}</dd><dt>Atasan langsung</dt><dd>${esc(Store.nama(me.atasan) || '-')}</dd><dt>Bawahan langsung</dt><dd>${(me.bawahan || []).map((e) => esc(Store.nama(e))).join(', ') || '-'}</dd></dl></div></div>
-      <div class="card"><div class="card-h"><h3>${ic('key', 'sm')}Keamanan</h3></div><div class="card-b">${me.darurat ? `<div class="note warn">${ic('warn', 'sm')}<div>Akun darurat tidak dapat mengganti sandi dari sini. Gunakan fungsi <code>resetAksesDarurat()</code> di editor Apps Script.</div></div>` : `<button class="btn pri mb" data-act="pw">${ic('key', 'sm')}Ganti kata sandi</button>`}
+      <div class="card"><div class="card-h"><h3>${ic('key', 'sm')}Keamanan</h3></div><div class="card-b">${me.darurat ? `<div class="note warn">${ic('warn', 'sm')}<div>Akun darurat tidak dapat mengganti sandi dari sini. Gunakan fungsi <code>resetAksesDarurat()</code> di editor Apps Script.</div></div>` : Auth.cfg && Auth.cfg.loginSandi ? `<button class="btn pri mb" data-act="pw">${ic('key', 'sm')}Ganti kata sandi</button>` : `<div class="note ok">${ic('shield', 'sm')}<div>Anda masuk dengan <b>akun Google</b> (${esc(me.email)}). Keamanan login (sandi, verifikasi 2 langkah) dikelola di akun Google Anda.</div></div>`}
         <div class="lbl mt mb-s">Sesi</div><div class="row"><button class="btn" data-act="out">${ic('logout', 'sm')}Keluar dari perangkat ini</button><button class="btn danger" data-act="outAll">${ic('logout', 'sm')}Keluar dari semua perangkat</button></div>
-        <div class="lbl mt mb-s">Aplikasi</div><p class="mini" style="margin:0">Versi ${APP_VERSION} · data lokal ${S.at ? 'disinkron ' + new Date(S.at).toLocaleString('id-ID') : '-'}. Pasang sebagai aplikasi melalui ikon ${ic('install', 'sm')} di bilah atas (Chrome/Edge) atau "Tambahkan ke Layar Utama" (Safari).</p>
-        <div class="row mt"><button class="btn sm" data-act="resync">${ic('sync', 'sm')}Sinkron ulang penuh</button></div></div></div></div>`;
+        <div class="lbl mt mb-s">Aplikasi</div><p class="mini" style="margin:0">Versi aplikasi ${APP_VERSION} · server ${esc((S.versi && S.versi.backend) || '-')} · data lokal ${S.at ? 'disinkron ' + new Date(S.at).toLocaleString('id-ID') : '-'}. Pasang sebagai aplikasi melalui ikon ${ic('install', 'sm')} di bilah atas (Chrome/Edge) atau "Tambahkan ke Layar Utama" (Safari).</p>
+        <div class="row mt"><button class="btn sm" data-act="ver">${ic('flag', 'sm')}Riwayat versi</button><button class="btn sm" data-act="resync">${ic('sync', 'sm')}Sinkron ulang penuh</button></div></div></div></div>`;
     el.onclick = async (e) => {
       const t = e.target.closest('[data-act]'); if (!t) return;
       if (t.dataset.act === 'pw') this.gantiSandi(false);
       if (t.dataset.act === 'out') { if (await confirmBox('Keluar dari aplikasi di perangkat ini?', { ok: 'Keluar' })) Auth.logout(); }
       if (t.dataset.act === 'outAll') { if (!(await confirmBox('Semua sesi akun ini (di semua perangkat) akan diakhiri. Lanjutkan?', { danger: true, ok: 'Keluar semua' }))) return; const r = await api('auth.logoutSemua', {}); if (r.success) Auth.logout('Semua sesi telah diakhiri.'); else toast(r.message, 'err'); }
+      if (t.dataset.act === 'ver') Versi.tampil();
       if (t.dataset.act === 'resync') { const r = await Sync.run({ force: true, loud: true }); if (r.success) toast('Data disinkron ulang.', 'ok'); }
     };
   },

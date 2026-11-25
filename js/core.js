@@ -4,7 +4,12 @@
    router hash, kalkulasi realisasi, grafik SVG, ekspor, utilitas UI.
    ===================================================================== */
 'use strict';
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
+/** Riwayat versi frontend (terbaru di atas) — tampil di menu Profil → Riwayat Versi */
+const FE_RIWAYAT = [
+  { versi: '1.1.0', tanggal: '2026-11-25', catatan: ['Masuk dengan akun Google tanpa kata sandi (akses darurat tetap tersedia).', 'Menu baru Pengadaan Barang/Jasa: Instruksi PPK ke Pejabat Pengadaan, HPS, dan Spesifikasi Teknis; cetak Word/Excel/PDF dan arsip scan.', 'Impor dari Excel, Word, PDF, dan CSV dengan pratinjau & pencocokan kolom (termasuk DPA dari PDF).', 'Template dokumen bisa diunggah dalam bentuk Word, Excel, atau PDF.', 'Kontrak dapat ditautkan ke paket pengadaan; dokumen paket ikut menandai checklist audit.', 'Semua unggahan dokumen (arsip, lampiran realisasi, scan paket) menerima PDF, Word, dan Excel termasuk format lama .doc/.xls; formulir kontrak dapat diisi otomatis dari dokumen SPK.', 'Riwayat versi tercatat di aplikasi.'] },
+  { versi: '1.0.0', tanggal: '2026-11-25', catatan: ['Rilis pertama: perencanaan DPA, kontrak, realisasi bulanan, evaluasi triwulanan berjenjang, arsip, checklist audit, laporan & Lembar Monev, generator SPK/BAST/Laporan.'] }
+];
 
 /* ---------------- Konfigurasi ---------------- */
 const CFG = (function () {
@@ -26,7 +31,7 @@ const K = {
   ROMAWI: ['', 'I', 'II', 'III', 'IV'],
   JENIS: [['RKA_DPA', 'RKA / DPA'], ['HPS', 'HPS & Survei Harga'], ['PENETAPAN', 'Penetapan Penyedia'], ['SPK', 'SPK / Kontrak'],
     ['JAMINAN', 'Jaminan Pelaksanaan'], ['SPMK', 'SPMK'], ['LAPORAN', 'Laporan Progres'], ['FOTO', 'Dokumentasi Foto'],
-    ['BAPHP', 'BA Pemeriksaan Hasil Pekerjaan'], ['BAST', 'BAST'], ['SPM', 'SPM'], ['SP2D', 'SP2D'], ['PAJAK', 'Bukti Pajak'], ['LAINNYA', 'Lainnya']],
+    ['BAPHP', 'BA Pemeriksaan Hasil Pekerjaan'], ['INSTRUKSI', 'Instruksi PPK'], ['SPEK', 'Spesifikasi Teknis'], ['BAST', 'BAST'], ['SPM', 'SPM'], ['SP2D', 'SP2D'], ['PAJAK', 'Bukti Pajak'], ['LAINNYA', 'Lainnya']],
   PREDIKAT: { SANGAT_BERHASIL: 'Sangat Berhasil', BERHASIL: 'Berhasil', KURANG_BERHASIL: 'Kurang Berhasil', TIDAK_BERHASIL: 'Tidak Berhasil' },
   PRED_CHIP: { SANGAT_BERHASIL: 'info', BERHASIL: 'ok', KURANG_BERHASIL: 'warn', TIDAK_BERHASIL: 'err' },
   ST_KONTRAK: { DRAF: ['Draf', 'slate'], AKTIF: ['Aktif', 'ok'], SELESAI: ['Selesai', 'info'], PUTUS: ['Putus', 'err'], TERLAMBAT: ['Terlambat', 'err'] },
@@ -34,9 +39,9 @@ const K = {
   ST_CL: { LENGKAP: ['Lengkap', 'ok'], BELUM: ['Belum Lengkap', 'warn'], TIDAK_PERLU: ['Tidak Perlu', 'slate'] },
   METODE: ['E-Purchasing / E-Katalog', 'Pengadaan Langsung', 'Penunjukan Langsung', 'Tender', 'Seleksi', 'Swakelola', 'Lainnya'],
   KEYS: { pengguna: 'Email', subkeg: 'ID_SubKeg', kontrak: 'ID_Kontrak', realisasi: 'ID', evaluasi: 'ID', arsip: 'ID_Dokumen',
-    checklistMaster: 'Kode', checklist: 'ID', template: 'ID_Template', dokumen: 'ID' },
+    checklistMaster: 'Kode', checklist: 'ID', template: 'ID_Template', dokumen: 'ID', pengadaan: 'ID_Paket', pengadaanItem: 'ID', riwayatVersi: 'Versi' },
   NUM: ['Pagu', 'Target', 'Nilai_Kontrak', 'Realisasi_Fisik', 'Realisasi_Keuangan', 'Bulan', 'Tahun', 'Triwulan', 'Ukuran', 'Urutan',
-    'Rencana_TW1', 'Rencana_TW2', 'Rencana_TW3', 'Rencana_TW4', 'Versi']
+    'Rencana_TW1', 'Rencana_TW2', 'Rencana_TW3', 'Rencana_TW4', 'Pagu_Paket', 'PPN_Persen', 'Nilai_HPS', 'Jangka_Waktu', 'Volume', 'Harga_Satuan', 'No']
 };
 const jenisNama = (k) => (K.JENIS.find((j) => j[0] === k) || [k, k || '-'])[1];
 
@@ -145,20 +150,20 @@ const Store = {
   },
   normRow(o) { K.NUM.forEach((k) => { if (k in o && o[k] !== '' && o[k] != null) o[k] = num(o[k]); }); return o; },
   ingest(b) {
-    S.ver = b.ver; S.tahun = Number(b.tahun) || S.tahun; S.me = Object.assign({}, b.me); S.settings = b.settings || {};
+    S.ver = b.ver; S.tahun = Number(b.tahun) || S.tahun; S.me = Object.assign({}, b.me); S.settings = b.settings || {}; S.versi = b.versi || null;
     TABLES.forEach((n) => { S.t[n] = Store.fromHR((b.tables || {})[n]); });
     S.at = Date.now(); Store.bump(); Store.save();
   },
   save() {
     const tables = {}; TABLES.forEach((n) => { tables[n] = S.t[n]; });
-    if (!LS.set(Store.key(), { ver: S.ver, tahun: S.tahun, me: S.me, settings: S.settings, tables, at: S.at, v: APP_VERSION })) {
+    if (!LS.set(Store.key(), { ver: S.ver, tahun: S.tahun, me: S.me, settings: S.settings, versi: S.versi, tables, at: S.at, v: APP_VERSION })) {
       LS.del(Store.key()); // kuota penuh → jangan simpan setengah
     }
   },
   saveSoon: debounce(() => Store.save(), 400),
   load() {
     const d = LS.get(Store.key(), null); if (!d || d.v !== APP_VERSION || !d.tables) return false;
-    S.ver = d.ver; S.tahun = d.tahun; S.me = d.me; S.settings = d.settings || {}; S.at = d.at || 0;
+    S.ver = d.ver; S.tahun = d.tahun; S.me = d.me; S.settings = d.settings || {}; S.versi = d.versi || null; S.at = d.at || 0;
     TABLES.forEach((n) => { S.t[n] = (d.tables[n] || []).map(Store.normRow); });
     Store.bump(); return true;
   },
@@ -256,7 +261,8 @@ const Calc = {
     return Calc.memo('cl_' + idK, () => {
       const master = S.t.checklistMaster.filter((m) => m.Aktif !== 'TIDAK').sort((a, b) => num(a.Urutan) - num(b.Urutan));
       const rows = S.t.checklist.filter((c) => c.ID_Kontrak === idK);
-      const docs = S.t.arsip.filter((a) => a.ID_Kontrak === idK);
+      const kk = S.t.kontrak.find((x) => x.ID_Kontrak === idK) || {};
+      const docs = S.t.arsip.filter((a) => a.ID_Kontrak === idK || (kk.ID_Paket && a.ID_Paket === kk.ID_Paket));
       const items = master.map((m) => {
         const r = rows.find((c) => c.Kode_Item === m.Kode);
         const autoDoc = docs.find((d) => d.Jenis_Dokumen === m.Jenis_Dokumen);
@@ -311,12 +317,27 @@ const Auth = {
     if (r.success) { this.set(r.data.token, r.data.me); }
     return r;
   },
+  cfg: null,
+  /** Konfigurasi login publik (Client ID Google) — disimpan lokal agar halaman masuk instan */
+  async config(fresh) {
+    if (!fresh && this.cfg) return this.cfg;
+    const c = LS.get('sp_authcfg', null); if (c && !fresh) { this.cfg = c; this.config(true); return c; }
+    const r = await api('auth.config', {}, { quiet: true });
+    if (r.success) { this.cfg = r.data || {}; LS.set('sp_authcfg', this.cfg); }
+    return this.cfg || c || {};
+  },
+  async google(idToken) {
+    const r = await api('auth.google', { idToken });
+    if (r.success) this.set(r.data.token, r.data.me);
+    return r;
+  },
   async darurat(username, password) {
     const r = await api('auth.darurat', { username, password });
     if (r.success) this.set(r.data.token, r.data.me);
     return r;
   },
   logout(msg) {
+    try { if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); } catch (e) {}
     const key = Store.key(); this.clear(); this.me = null; S.me = null; LS.del(key);
     TABLES.forEach((n) => { S.t[n] = []; }); S.ver = '';
     App.showLogin(msg);
@@ -567,7 +588,7 @@ async function exportXlsx(filename, sheets) {
 /* =====================================================================
    APLIKASI: router, navigasi, render
    ===================================================================== */
-const Pages = { list: [], map: {}, add(p) { this.list.push(p); this.map[p.id] = p; } };
+const Pages = { list: [], map: {}, add(p) { const i = p.after ? this.list.findIndex((x) => x.id === p.after) : -1; if (i > -1) this.list.splice(i + 1, 0, p); else this.list.push(p); this.map[p.id] = p; } };
 const UI = {}; // state filter/halaman per page
 const App = {
   cur: null, q: {}, pendingRender: false,
@@ -618,6 +639,7 @@ const App = {
     $('#meAv').textContent = initials(S.me.nama || S.me.email);
     $('#taTxt').innerHTML = `TA ${esc(S.tahun)} <span class="t">· TRIWULAN ${K.ROMAWI[num(S.settings.TRIWULAN_AKTIF)] || '-'}</span>`;
     $$('[data-set]').forEach((el) => { const v = S.settings[el.dataset.set]; if (v) el.textContent = v; });
+    const vb = $('#verBar'); if (vb) { const beda = Versi.beda(); vb.classList.toggle('hidden', !beda); if (beda) vb.innerHTML = ic('info', 'sm') + `Versi server ${esc(S.versi.backend)} berbeda dengan versi aplikasi ${APP_VERSION}. ${Can.admin() ? 'Perbarui backend (Deploy → Versi baru) atau frontend agar sama.' : 'Hubungi admin.'}`; }
   },
   openSide() { $('#side').classList.add('open'); $('#scrim').classList.remove('hidden'); },
   closeSide() { $('#side').classList.remove('open'); $('#scrim').classList.add('hidden'); },
@@ -626,6 +648,13 @@ const App = {
     $('#lgCfg').classList.toggle('hidden', CFG.ok);
     if (msg) { const e = $('#lgErr'); e.textContent = msg; e.classList.remove('hidden'); }
     warmUpServer('pub');
+    if (CFG.ok) GIS.render();
+  },
+  async loginGoogle(cred) {
+    const err = $('#lgErr'), info = $('#lgInfo'); err.classList.add('hidden'); info.textContent = 'Memeriksa akun Google…'; info.classList.remove('hidden');
+    const r = await Auth.google(cred); info.classList.add('hidden');
+    if (!r.success) { err.textContent = r.message || 'Gagal masuk.'; err.classList.remove('hidden'); return r; }
+    this.enter(); return r;
   },
   async enter() {
     $('#loginScreen').classList.add('hidden'); $('#appShell').classList.remove('hidden');
@@ -637,7 +666,8 @@ const App = {
       if (!r.success) { $('#view').innerHTML = `<div class="note err">${ic('warn')}<div><b>Gagal memuat data.</b><br>${esc(r.message)}</div></div><button class="btn pri mt" onclick="Sync.run({force:true,loud:true})">${ic('refresh')}Coba lagi</button>`; return; }
       this.render();
     }
-    if (S.me && S.me.wajibGanti && !S.me.darurat) setTimeout(() => Pages.map.profil.gantiSandi(true), 300);
+    if (S.me && S.me.wajibGanti && !S.me.darurat && Auth.cfg && Auth.cfg.loginSandi) setTimeout(() => Pages.map.profil.gantiSandi(true), 300);
+    setTimeout(() => Versi.cek(), 600);
   },
   init() {
     Activity.init(); Auth.init(); Sync.start();
@@ -656,7 +686,7 @@ const App = {
     document.addEventListener('click', (e) => { if (!e.target.closest('#bellPop') && !e.target.closest('#bellBtn')) $('#bellPop').classList.add('hidden'); });
     // Login
     $('#lgEye').onclick = () => { const i = $('#lgPass'); i.type = i.type === 'password' ? 'text' : 'password'; };
-    $('#loginForm').onsubmit = async (e) => {
+    $('#pwForm').onsubmit = async (e) => {
       e.preventDefault(); const btn = $('#lgBtn'), err = $('#lgErr'); err.classList.add('hidden');
       const em = $('#lgEmail').value.trim(), pw = $('#lgPass').value;
       if (!em || !pw) { err.textContent = 'Isi email dan kata sandi.'; err.classList.remove('hidden'); return; }
@@ -666,7 +696,7 @@ const App = {
       if (!r.success) { err.textContent = r.message || 'Gagal masuk.'; err.classList.remove('hidden'); return; }
       $('#lgPass').value = ''; this.enter();
     };
-    $('#lgEmail').addEventListener('focus', () => warmUpServer('pub'), { once: true });
+    $('#lgPwLink').onclick = (e) => { e.preventDefault(); $('#pwForm').classList.toggle('hidden'); };
     $('#lgDarurat').onclick = (e) => { e.preventDefault(); Pages.loginDarurat(); };
     // PWA install
     let deferred = null;
@@ -676,6 +706,42 @@ const App = {
     if (!navigator.onLine) $('#offlineBar').classList.remove('hidden');
     // Mulai
     if (Auth.token && Auth.me) this.enter(); else this.showLogin();
+  }
+};
+/* ---------------- Google Identity Services (login tanpa kata sandi) ---------------- */
+const GIS = {
+  SRC: 'https://accounts.google.com/gsi/client',
+  async render() {
+    const box = $('#gBtn'), info = $('#lgInfo');
+    const cfg = await Auth.config();
+    $('#lgPwLink').classList.toggle('hidden', !(cfg && cfg.loginSandi));
+    if (!cfg || !cfg.googleClientId) { box.innerHTML = ''; info.innerHTML = 'Login Google belum dikonfigurasi. Admin: masuk lewat <b>Akses darurat</b>, lalu isi Client ID di <b>Pengaturan → Keamanan</b>.'; info.classList.remove('hidden'); return; }
+    try {
+      await loadScript(this.SRC);
+      google.accounts.id.initialize({ client_id: cfg.googleClientId, callback: (resp) => App.loginGoogle(resp.credential), auto_select: false, cancel_on_tap_outside: true, ux_mode: 'popup' });
+      box.innerHTML = ''; google.accounts.id.renderButton(box, { theme: 'filled_blue', size: 'large', text: 'signin_with', shape: 'rectangular', logo_alignment: 'left', width: Math.min(320, box.clientWidth || 320), locale: 'id' });
+    } catch (e) { box.innerHTML = ''; info.textContent = 'Tombol Google tidak dapat dimuat. Periksa koneksi internet lalu muat ulang halaman.'; info.classList.remove('hidden'); }
+  }
+};
+/* ---------------- Riwayat versi ---------------- */
+const Versi = {
+  beda() { return !!(S.versi && S.versi.backend && S.versi.backend !== APP_VERSION); },
+  cek() {
+    if (!S.me) return;
+    const seen = LS.get('sp_ver_seen', null);
+    if (seen !== APP_VERSION) { LS.set('sp_ver_seen', APP_VERSION); this.tampil(true); }
+    if (Can.admin() && !S.t.riwayatVersi.some((r) => r.Versi === APP_VERSION && r.Komponen === 'frontend')) {
+      api('versi.catat', { versi: APP_VERSION, komponen: 'frontend', catatan: FE_RIWAYAT[0].catatan.join(' | ') }, { quiet: true }).then((r) => { if (r.success && r.data && r.data.row) { S.t.riwayatVersi.push(Store.normRow(r.data.row)); Store.bump(); Store.saveSoon(); } });
+    }
+  },
+  tampil(baru) {
+    const be = (S.versi && S.versi.riwayat) || [], pasang = S.t.riwayatVersi.slice().sort((a, b) => String(b.Tanggal_Pasang).localeCompare(String(a.Tanggal_Pasang)));
+    const blok = (r) => `<div style="padding:10px 0;border-bottom:1px solid var(--border)"><div class="row"><b class="strong">Versi ${esc(r.versi)}</b>${r.versi === APP_VERSION ? chip('terpasang', 'ok') : ''}<span class="mini">${tgl(r.tanggal)}</span></div><ul style="margin:6px 0 0;padding-left:20px">${(r.catatan || []).map((c) => `<li>${esc(c)}</li>`).join('')}</ul></div>`;
+    modal({ title: baru ? 'Yang baru di versi ' + APP_VERSION : 'Riwayat Versi', icon: 'info', size: 'lg',
+      body: `<div class="grid g2"><div><div class="lbl">Aplikasi (frontend) · v${APP_VERSION}</div>${FE_RIWAYAT.map(blok).join('')}</div><div><div class="lbl">Server (backend) · v${esc((S.versi && S.versi.backend) || '-')}</div>${be.length ? be.map(blok).join('') : '<p class="mini">Belum ada data versi server.</p>'}</div></div>
+        ${this.beda() ? `<div class="note warn mt">${ic('warn', 'sm')}<div>Versi server dan aplikasi berbeda. Pastikan backend dan frontend sama-sama diperbarui.</div></div>` : ''}
+        <div class="lbl mt mb-s">Catatan pemasangan di database</div>${pasang.length ? `<div class="tw"><table class="t light"><thead><tr><th>Versi</th><th>Komponen</th><th>Dipasang</th><th>Oleh</th></tr></thead><tbody>${pasang.map((r) => `<tr><td class="mono">${esc(r.Versi)}</td><td>${esc(r.Komponen)}</td><td>${esc(String(r.Tanggal_Pasang).slice(0, 16))}</td><td>${esc(Store.nama(r.Oleh))}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mini">Belum ada catatan.</p>'}`,
+      foot: '<button class="btn pri" data-x>Mengerti</button>' });
   }
 };
 function skeletonPage() {

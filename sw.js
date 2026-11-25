@@ -1,6 +1,6 @@
 /* Service worker SI-PANTAU — cache aset statis; API GAS selalu ke jaringan */
-const VERSI = 'sipantau-v1.0.0';
-const ASET = ['./', './index.html', './css/app.css?v=1.0.0', './js/config.js?v=1.0.0', './js/core.js?v=1.0.0', './js/pages.js?v=1.0.0',
+const VERSI = 'sipantau-v1.1.0';
+const ASET = ['./', './index.html', './css/app.css?v=1.1.0', './js/config.js?v=1.1.0', './js/core.js?v=1.1.0', './js/pages.js?v=1.1.0', './js/impor.js?v=1.1.0', './js/pengadaan.js?v=1.1.0',
   './manifest.json', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -13,7 +13,7 @@ self.addEventListener('fetch', (e) => {
   const req = e.request; if (req.method !== 'GET') return;
   const url = new URL(req.url);
   // Backend Apps Script & Google Drive: jangan pernah di-cache
-  if (/script\.google(usercontent)?\.com$/.test(url.hostname) || url.pathname.endsWith('/exec')) return;
+  if (/script\.google(usercontent)?\.com$|accounts\.google\.com$|googleapis\.com$/.test(url.hostname) && !/fonts\.googleapis\.com$/.test(url.hostname) || url.pathname.endsWith('/exec')) return;
   // config.js: jaringan dulu (agar URL GAS baru langsung terpakai), cadangan cache
   if (url.origin === location.origin && /\/js\/config\.js/.test(url.pathname)) {
     e.respondWith(fetch(req).then((r) => { const cp = r.clone(); caches.open(VERSI).then((c) => c.put(req, cp)); return r; }).catch(() => caches.match(req)));
