@@ -4,9 +4,10 @@
    router hash, kalkulasi realisasi, grafik SVG, ekspor, utilitas UI.
    ===================================================================== */
 'use strict';
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 /** Riwayat versi frontend (terbaru di atas) — tampil di menu Profil → Riwayat Versi */
 const FE_RIWAYAT = [
+  { versi: '1.2.0', tanggal: '2026-11-26', catatan: ['Perencanaan mengikuti format SIPD-RI: impor PDF "Cetak RKA/DPA Rincian Belanja" per Sub Kegiatan (bisa banyak berkas sekaligus), termasuk dokumen perubahan (sebelum/sesudah).', 'Halaman Rincian Anggaran Belanja per Sub Kegiatan: identitas, indikator, rincian rekening/item, export Excel.', 'Pengadaan mengikuti format Instruksi, HPS, dan Spesifikasi Teknis Dishub: Kode RUP, kualifikasi, ijin usaha, dasar instruksi, harga HPS sudah termasuk PPN, spesifikasi fungsi/waktu/pelayanan.', 'Isi otomatis dari dokumen Instruksi, impor tabel HPS dari PDF, impor spesifikasi mutu dari Word/PDF, dan ambil item HPS dari Rincian DPA.', 'Data contoh (dummy) dapat diisi/dihapus dari Pengaturan → Status Sistem.'] },
   { versi: '1.1.0', tanggal: '2026-11-25', catatan: ['Masuk dengan akun Google tanpa kata sandi (akses darurat tetap tersedia).', 'Menu baru Pengadaan Barang/Jasa: Instruksi PPK ke Pejabat Pengadaan, HPS, dan Spesifikasi Teknis; cetak Word/Excel/PDF dan arsip scan.', 'Impor dari Excel, Word, PDF, dan CSV dengan pratinjau & pencocokan kolom (termasuk DPA dari PDF).', 'Template dokumen bisa diunggah dalam bentuk Word, Excel, atau PDF.', 'Kontrak dapat ditautkan ke paket pengadaan; dokumen paket ikut menandai checklist audit.', 'Semua unggahan dokumen (arsip, lampiran realisasi, scan paket) menerima PDF, Word, dan Excel termasuk format lama .doc/.xls; formulir kontrak dapat diisi otomatis dari dokumen SPK.', 'Riwayat versi tercatat di aplikasi.'] },
   { versi: '1.0.0', tanggal: '2026-11-25', catatan: ['Rilis pertama: perencanaan DPA, kontrak, realisasi bulanan, evaluasi triwulanan berjenjang, arsip, checklist audit, laporan & Lembar Monev, generator SPK/BAST/Laporan.'] }
 ];
@@ -41,7 +42,8 @@ const K = {
   KEYS: { pengguna: 'Email', subkeg: 'ID_SubKeg', kontrak: 'ID_Kontrak', realisasi: 'ID', evaluasi: 'ID', arsip: 'ID_Dokumen',
     checklistMaster: 'Kode', checklist: 'ID', template: 'ID_Template', dokumen: 'ID', pengadaan: 'ID_Paket', pengadaanItem: 'ID', riwayatVersi: 'Versi' },
   NUM: ['Pagu', 'Target', 'Nilai_Kontrak', 'Realisasi_Fisik', 'Realisasi_Keuangan', 'Bulan', 'Tahun', 'Triwulan', 'Ukuran', 'Urutan',
-    'Rencana_TW1', 'Rencana_TW2', 'Rencana_TW3', 'Rencana_TW4', 'Pagu_Paket', 'PPN_Persen', 'Nilai_HPS', 'Jangka_Waktu', 'Volume', 'Harga_Satuan', 'No']
+    'Rencana_TW1', 'Rencana_TW2', 'Rencana_TW3', 'Rencana_TW4', 'Pagu_Paket', 'PPN_Persen', 'Nilai_HPS', 'Jangka_Waktu', 'Volume', 'Harga_Satuan', 'No',
+    'Pagu_Sebelum', 'Alokasi_Lalu', 'Alokasi_Depan', 'Jumlah_Rincian']
 };
 const jenisNama = (k) => (K.JENIS.find((j) => j[0] === k) || [k, k || '-'])[1];
 

@@ -65,16 +65,37 @@ Pages.add({
 /* =====================================================================
    2. PERENCANAAN ANGGARAN
    ===================================================================== */
+/* Rincian Anggaran Belanja (format SIPD-RI) — dimuat saat dibuka, di-cache per Sub Kegiatan (memori + localStorage, maks 25) */
+const RB = {
+  mem: {},
+  ver(id) { const s = Store.get('subkeg', id) || {}; return String(s.Diperbarui || '') + '|' + (s.Jumlah_Rincian || 0); },
+  reset() { this.mem = {}; try { LS.set('sp_rb', {}); } catch (e) { /* abaikan */ } },
+  async ambil(id) {
+    const v = this.ver(id); let m = this.mem[id];
+    if (!m) { const all = LS.get('sp_rb', {}) || {}; m = all[id]; }
+    if (m && m.v === v) { this.mem[id] = m; return m.rows; }
+    const r = await api('dpa.rincian', { ID_SubKeg: id }, { quiet: true });
+    if (!r.success) throw new Error(r.message || 'Gagal memuat rincian belanja.');
+    const h = r.data.h, NUM = ['No', 'Volume', 'Harga', 'Jumlah', 'Jumlah_Sebelum', 'Tahun'];
+    const rows = r.data.r.map((x) => { const o = {}; h.forEach((k, i) => { const val = x[i] == null ? '' : x[i]; o[k] = NUM.indexOf(k) > -1 && val !== '' ? Number(val) : String(val); }); return o; });
+    m = { v, rows }; this.mem[id] = m;
+    try { const all = LS.get('sp_rb', {}) || {}; delete all[id]; all[id] = m; const ks = Object.keys(all); while (ks.length > 25) delete all[ks.shift()]; LS.set('sp_rb', all); } catch (e) { /* kuota penuh: cukup di memori */ }
+    return rows;
+  }
+};
+const isContoh = (id) => /^CTH-/.test(String(id || ''));
+
 Pages.add({
   id: 'perencanaan', title: 'Perencanaan Anggaran', icon: 'wallet', nav: true, group: 'Menu Utama',
   render(el, q, st) {
+    if (q.sk && Store.get('subkeg', q.sk)) return this.detail(el, q, st);
     st.cari = st.cari || ''; st.bidang = st.bidang || ''; st.prog = st.prog || '';
     const all = S.t.subkeg, prog = [...new Set(all.map((s) => s.Nama_Program).filter(Boolean))];
     const keg = new Set(all.map((s) => s.Kode_Kegiatan + '|' + s.Nama_Kegiatan));
     const tot = all.reduce((a, s) => a + num(s.Pagu), 0);
     const kontrakTot = S.t.kontrak.reduce((a, k) => a + num(k.Nilai_Kontrak), 0);
     el.innerHTML = ph({ eyebrow: 'Master Data DPA', eyebrowIc: 'verified', title: 'Perencanaan Anggaran (RKA / DPA)', desc: `Master data Program, Kegiatan, dan Sub Kegiatan Tahun Anggaran ${esc(S.tahun)}.`,
-      acts: (Can.editPlan() ? `<button class="btn" data-act="import">${ic('upload', 'sm')}Import DPA</button>` : '') + `<button class="btn" data-act="xls">${ic('download', 'sm')}Export Excel</button>` + (Can.editPlan() ? `<button class="btn gold" data-act="add">${ic('add', 'sm')}Tambah Sub Kegiatan</button>` : '') }) +
+      acts: (Can.editPlan() ? `<button class="btn" data-act="import">${ic('upload', 'sm')}Impor RKA/DPA (SIPD · Excel · PDF)</button>` : '') + `<button class="btn" data-act="xls">${ic('download', 'sm')}Export Excel</button>` + (Can.editPlan() ? `<button class="btn gold" data-act="add">${ic('add', 'sm')}Tambah Sub Kegiatan</button>` : '') }) +
     `<div class="grid g4 mb">${kpi({ l: 'Total Pagu Induk DPA', i: 'bank', v: rpS(tot), title: rp(tot), s: 'Terkontrak ' + pct(tot ? (kontrakTot / tot) * 100 : 0) })}${kpi({ l: 'Total Program', i: 'tree', v: prog.length, s: 'Program strategis' })}${kpi({ l: 'Total Kegiatan', i: 'task', v: keg.size, s: 'Kegiatan teknis' })}${kpi({ l: 'Total Sub Kegiatan', i: 'checklist', gold: true, v: all.length, s: 'Unit kerja anggaran' })}</div>
     <div class="card mb"><div class="filters"><div class="search">${ic('search')}<input class="in" name="cari" placeholder="Cari kode, nama kegiatan, indikator…" value="${esc(st.cari)}"></div>${selectHtml('prog', [['', 'Semua Program']].concat(prog.map((p) => [p, p])), st.prog)}${selectHtml('bidang', optBidang(), st.bidang)}</div></div>
     <div class="card"><div id="tbl"></div><div class="card-f">${ic('info', 'sm')}Rencana fisik kumulatif per triwulan (default 25/50/75/100%) dipakai untuk menghitung deviasi realisasi.</div></div>`;
@@ -92,11 +113,11 @@ Pages.add({
           const [kode, nama] = k.split('|'), sks = g.keg[k];
           body += `<tr class="lv2"><td class="mono">${esc(kode)}</td><td class="nm" colspan="2">${ic('subdir', 'sm')} ${esc(nama)}</td><td class="n">${fmtN(sks.reduce((a, s) => a + num(s.Pagu), 0))}</td><td colspan="3"></td></tr>`;
           sks.forEach((s) => { const nk = S.t.kontrak.filter((x) => x.ID_SubKeg === s.ID_SubKeg).length;
-            body += `<tr class="lv3 ${s._pending ? 'c-mut' : ''}"><td class="mono">${esc(s.Kode_SubKeg)}</td><td class="nm"><b>${esc(s.Nama_SubKegiatan)}</b>${nk ? ' ' + chip(nk + ' Kontrak', 'gold') : ''}</td><td>${esc(s.Indikator)}<span class="sub c-warn">Target: ${esc(fmtN(s.Target, 2).replace(/,00$/, ''))} ${esc(s.Satuan)}</span></td><td class="n">${fmtN(s.Pagu)}</td><td>${chip(s.Bidang || '-', 'slate')}</td><td>${esc(Store.nama(s.PIC_Email))}<span class="sub">${esc((Store.user(s.PIC_Email) || {}).Jabatan || '')}</span></td>
-              <td class="acts">${Can.editPlan() ? `<button class="btn ghost icon" data-edit="${esc(s.ID_SubKeg)}" title="Ubah">${ic('edit', 'sm')}</button><button class="btn ghost icon" data-del="${esc(s.ID_SubKeg)}" title="Hapus">${ic('trash', 'sm')}</button>` : `<a class="btn ghost icon" href="#/realisasi?sk=${esc(s.ID_SubKeg)}" title="Realisasi">${ic('trend', 'sm')}</a>`}</td></tr>`; });
+            body += `<tr class="lv3 ${s._pending ? 'c-mut' : ''}"><td class="mono">${esc(s.Kode_SubKeg)}</td><td class="nm"><a href="#/perencanaan?sk=${esc(s.ID_SubKeg)}"><b>${esc(s.Nama_SubKegiatan)}</b></a>${nk ? ' ' + chip(nk + ' Kontrak', 'gold') : ''}${/SIPD/.test(s.Sumber_Import || '') ? ' ' + chip('SIPD · ' + (s.Jumlah_Rincian || 0) + ' item', 'info') : ''}${isContoh(s.ID_SubKeg) ? ' ' + chip('Contoh', 'slate') : ''}${!s.Bidang || !s.PIC_Email ? ' ' + chip('Lengkapi bidang/PIC', 'warn') : ''}</td><td>${esc(s.Indikator)}<span class="sub c-warn">Target: ${esc(fmtN(s.Target, 2).replace(/,00$/, ''))} ${esc(s.Satuan)}</span></td><td class="n">${fmtN(s.Pagu)}</td><td>${chip(s.Bidang || '-', 'slate')}</td><td>${esc(Store.nama(s.PIC_Email))}<span class="sub">${esc((Store.user(s.PIC_Email) || {}).Jabatan || '')}</span></td>
+              <td class="acts"><a class="btn ghost icon" href="#/perencanaan?sk=${esc(s.ID_SubKeg)}" title="Rincian anggaran belanja">${ic('receipt', 'sm')}</a>${Can.editPlan() ? `<button class="btn ghost icon" data-edit="${esc(s.ID_SubKeg)}" title="Ubah">${ic('edit', 'sm')}</button><button class="btn ghost icon" data-del="${esc(s.ID_SubKeg)}" title="Hapus">${ic('trash', 'sm')}</button>` : `<a class="btn ghost icon" href="#/realisasi?sk=${esc(s.ID_SubKeg)}" title="Realisasi">${ic('trend', 'sm')}</a>`}</td></tr>`; });
         });
       });
-      $('#tbl').innerHTML = `<div class="tw"><table class="t"><thead><tr><th>Kode Rekening</th><th>Program / Kegiatan / Sub Kegiatan</th><th>Indikator & Target</th><th class="n">Pagu (Rp)</th><th>Bidang</th><th>Pejabat PIC</th><th></th></tr></thead><tbody>${body}</tbody><tfoot><tr><td colspan="3">Jumlah (${rows.length} sub kegiatan)</td><td class="n">${fmtN(rows.reduce((a, s) => a + num(s.Pagu), 0))}</td><td colspan="3"></td></tr></tfoot></table></div>`;
+      $('#tbl').innerHTML = `<div class="tw"><table class="t"><thead><tr><th>Kode</th><th>Program / Kegiatan / Sub Kegiatan</th><th>Indikator & Target</th><th class="n">Pagu (Rp)</th><th>Bidang</th><th>Pejabat PIC</th><th></th></tr></thead><tbody>${body}</tbody><tfoot><tr><td colspan="3">Jumlah (${rows.length} sub kegiatan)</td><td class="n">${fmtN(rows.reduce((a, s) => a + num(s.Pagu), 0))}</td><td colspan="3"></td></tr></tfoot></table></div>`;
     };
     draw();
     el.oninput = debounce((e) => { if (e.target.name === 'cari') { st.cari = e.target.value; draw(); } }, 120);
@@ -109,9 +130,65 @@ Pages.add({
       if (t.dataset.edit) Pages.formSubkeg(Store.get('subkeg', t.dataset.edit));
       if (t.dataset.del) {
         const s = Store.get('subkeg', t.dataset.del);
-        if (S.t.kontrak.some((k) => k.ID_SubKeg === s.ID_SubKeg) || S.t.realisasi.some((r) => r.ID_SubKeg === s.ID_SubKeg)) { toast('Sub kegiatan masih dipakai kontrak/realisasi — tidak bisa dihapus.', 'warn'); return; }
+        if (S.t.kontrak.some((k) => k.ID_SubKeg === s.ID_SubKeg) || S.t.realisasi.some((r) => r.ID_SubKeg === s.ID_SubKeg) || S.t.pengadaan.some((p) => p.ID_SubKeg === s.ID_SubKeg)) { toast('Sub kegiatan masih dipakai kontrak/realisasi/paket pengadaan — tidak bisa dihapus.', 'warn'); return; }
         if (!(await confirmBox(`Hapus sub kegiatan <b>${esc(s.Nama_SubKegiatan)}</b>?`, { danger: true, ok: 'Hapus' }))) return;
         mutate('subkeg.hapus', { ID_SubKeg: s.ID_SubKeg }, { optimistic: () => { const old = Store.remove('subkeg', s.ID_SubKeg); return () => Store.upsert('subkeg', old); }, okMsg: 'Sub kegiatan dihapus.' });
+      }
+    };
+  },
+
+  /* ---------- Detail Sub Kegiatan: identitas, indikator, Rincian Anggaran Belanja (format SIPD-RI) ---------- */
+  detail(el, q, st) {
+    const s = Store.get('subkeg', q.sk), th = num(s.Tahun) || S.tahun, pic = Store.user(s.PIC_Email) || {};
+    const paket = S.t.pengadaan.filter((p) => p.ID_SubKeg === s.ID_SubKeg && p.Status !== 'BATAL'), kontrak = S.t.kontrak.filter((k) => k.ID_SubKeg === s.ID_SubKeg), x = Calc.sk(s);
+    const beda = num(s.Pagu_Sebelum) ? num(s.Pagu) - num(s.Pagu_Sebelum) : 0, bisaPaket = Can.role('ADMIN', 'PEJABAT', 'STAF') && Can.bidangOk(s.Bidang);
+    st.mode = st.mode || 'semua';
+    el.innerHTML = `<div class="row mb-s no-print"><a class="btn sm ghost" href="#/perencanaan">${ic('left', 'sm')}Daftar sub kegiatan</a></div>` +
+      ph({ eyebrow: 'Rincian Anggaran Belanja Sub Kegiatan' + (s.Tahap_Anggaran ? ' · ' + s.Tahap_Anggaran : ''), eyebrowIc: 'wallet', title: s.Nama_SubKegiatan,
+        desc: `<span class="mono">${esc(s.Kode_SubKeg)}</span> · ${esc(s.Bidang || 'bidang belum diisi')} · PIC ${esc(pic.Nama || '—')}${isContoh(s.ID_SubKeg) ? ' · ' + chip('Data contoh', 'slate') : ''}`,
+        acts: `<button class="btn" data-act="xlsRb">${ic('excel', 'sm')}Export rincian</button>${bisaPaket ? `<button class="btn" data-act="paket">${ic('gavel', 'sm')}Buat paket pengadaan</button>` : ''}${Can.editPlan() ? `<button class="btn" data-act="imp">${ic('upload', 'sm')}Impor ulang PDF SIPD</button><button class="btn pri" data-act="ubah">${ic('edit', 'sm')}Ubah</button>` : ''}` }) +
+      `<div class="grid g4 mb">${kpi({ l: 'Alokasi ' + th, i: 'bank', v: rpS(s.Pagu), title: rp(s.Pagu), s: num(s.Pagu_Sebelum) ? 'Sebelum perubahan ' + rpS(s.Pagu_Sebelum) + ' (' + (beda >= 0 ? '+' : '−') + rpS(Math.abs(beda)) + ')' : 'Pagu sub kegiatan' })}
+        ${kpi({ l: 'Rincian belanja', i: 'receipt', v: (num(s.Jumlah_Rincian) || 0) + ' <small>item</small>', s: /SIPD/.test(s.Sumber_Import || '') ? esc(s.Sumber_Import) : 'Belum diimpor dari SIPD' })}
+        ${kpi({ l: 'Paket pengadaan', i: 'gavel', gold: true, v: paket.length + ' <small>paket</small>', s: 'HPS ' + rpS(paket.reduce((a, p) => a + num(p.Nilai_HPS), 0)) })}
+        ${kpi({ l: 'Realisasi', i: 'trend', v: pct(x.pagu ? (x.keu / x.pagu) * 100 : 0), bar: x.pagu ? (x.keu / x.pagu) * 100 : 0, s: 'Fisik ' + fmtN(x.fisik, 1) + '% · ' + kontrak.length + ' kontrak' })}</div>
+      <div class="grid g2 mb"><div class="card"><div class="card-h"><h3>${ic('info', 'sm')}Identitas</h3></div><div class="card-b"><dl class="kv">
+        <dt>Program</dt><dd><span class="mono">${esc(s.Kode_Program || '')}</span> ${esc(s.Nama_Program || '-')}</dd><dt>Kegiatan</dt><dd><span class="mono">${esc(s.Kode_Kegiatan || '')}</span> ${esc(s.Nama_Kegiatan || '-')}</dd>
+        <dt>Sub Kegiatan</dt><dd><span class="mono">${esc(s.Kode_SubKeg)}</span> ${esc(s.Nama_SubKegiatan)}</dd><dt>Sumber pendanaan</dt><dd>${esc(s.Sumber_Dana || '-')}</dd>
+        <dt>Lokasi</dt><dd>${esc(s.Lokasi || '-')}</dd><dt>Waktu pelaksanaan</dt><dd>${esc(s.Waktu_Pelaksanaan || '-')}</dd><dt>Kelompok sasaran</dt><dd>${esc(s.Kelompok_Sasaran || '-')}</dd>
+        <dt>Alokasi ${th - 1} / ${th} / ${th + 1}</dt><dd class="num">${rp(s.Alokasi_Lalu || 0)} · <b>${rp(s.Pagu)}</b> · ${rp(s.Alokasi_Depan || 0)}</dd></dl></div></div>
+        <div class="card"><div class="card-h"><h3>${ic('verified', 'sm')}Indikator & tolok ukur kinerja</h3></div><div class="tw"><table class="t light"><thead><tr><th>Indikator</th><th>Tolok ukur kinerja</th><th>Target kinerja</th></tr></thead><tbody>
+        ${[['Capaian Program', (s.Capaian_Program || '').split(' — ')[0], (s.Capaian_Program || '').split(' — ')[1]], ['Masukan', 'Dana yang dibutuhkan', rp(s.Pagu)], ['Keluaran', s.Indikator, (s.Target !== '' ? fmtN(s.Target, 2).replace(/,00$/, '') + ' ' : '') + (s.Satuan || '')], ['Hasil', (s.Hasil || '').split(' — ')[0], (s.Hasil || '').split(' — ')[1]]]
+          .map((r) => `<tr><td><b>${r[0]}</b></td><td>${esc(r[1] || '-')}</td><td>${esc(r[2] || '-')}</td></tr>`).join('')}</tbody></table></div></div></div>
+      <div class="card"><div class="card-h"><h3>${ic('table', 'sm')}Rincian Anggaran Belanja Sub Kegiatan</h3><div class="row" style="margin-left:auto">${[['semua', 'Semua baris'], ['rek', 'Rekening'], ['item', 'Item belanja']].map((m) => `<button class="btn sm ${st.mode === m[0] ? 'pri' : ''}" data-mode="${m[0]}">${m[1]}</button>`).join('')}</div></div><div id="rbBox"><div class="card-b">${'<div class="sk" style="margin:10px 0"></div>'.repeat(5)}</div></div></div>`;
+    let rows = null;
+    const draw = () => {
+      const box = $('#rbBox'); if (!box) return;
+      if (!rows.length) { box.innerHTML = `<div class="card-b">${emptyBox('Belum ada rincian belanja', 'Impor PDF "Cetak RKA/DPA Rincian Belanja" Sub Kegiatan ini dari SIPD-RI — kode rekening, uraian, koefisien, harga, dan jumlah akan tampil di sini.', Can.editPlan() ? `<button class="btn gold mt" data-act="imp">${ic('upload', 'sm')}Impor PDF SIPD</button>` : '')}</div>`; return; }
+      const ubah = rows.some((r) => r.Jumlah_Sebelum !== '' && r.Jumlah_Sebelum != null), lv = (k) => String(k || '').split('.').length;
+      const tampil = rows.filter((r) => st.mode === 'semua' || (st.mode === 'rek' ? r.Jenis === 'REK' : r.Jenis === 'ITEM'));
+      const rp0 = (v) => (v === '' || v == null ? '' : fmtN(v, 2).replace(/,00$/, ''));
+      const tot = rows.find((r) => r.Jenis === 'REK' && lv(r.Kode_Rekening) === 1), totJ = tot ? tot.Jumlah : rows.filter((r) => r.Jenis === 'ITEM').reduce((a, r) => a + num(r.Jumlah), 0), totS = tot ? tot.Jumlah_Sebelum : '';
+      box.innerHTML = `<div class="tw"><table class="t rb"><thead><tr><th>Kode rekening</th><th style="min-width:260px">Uraian</th><th>Koefisien</th><th>Satuan</th><th class="n">Harga (Rp)</th><th class="c">PPN</th><th class="n">Jumlah (Rp)</th>${ubah ? '<th class="n">Sebelum (Rp)</th><th class="n">Bertambah / (Berkurang)</th>' : ''}</tr></thead><tbody>
+        ${tampil.map((r) => { const sel = ubah ? `<td class="n mini">${rp0(r.Jumlah_Sebelum)}</td><td class="n mini ${num(r.Jumlah) - num(r.Jumlah_Sebelum) < 0 ? 'c-err' : ''}">${r.Jumlah_Sebelum === '' ? '' : rp0(num(r.Jumlah) - num(r.Jumlah_Sebelum))}</td>` : '';
+          if (r.Jenis === 'REK') { const l = lv(r.Kode_Rekening); return `<tr class="${l <= 3 ? 'lv1' : l <= 5 ? 'lv2' : 'lv3'}"><td class="mono">${esc(r.Kode_Rekening)}</td><td colspan="5"><b>${esc(r.Uraian)}</b></td><td class="n"><b>${rp0(r.Jumlah)}</b></td>${sel}</tr>`; }
+          if (r.Jenis === 'KELOMPOK') return `<tr><td></td><td colspan="5"><b>[ # ] ${esc(r.Uraian)}</b>${r.Sumber_Dana ? `<span class="sub">Sumber Dana: ${esc(r.Sumber_Dana)}</span>` : ''}</td><td class="n"><b>${rp0(r.Jumlah)}</b></td>${sel}</tr>`;
+          if (r.Jenis === 'KETERANGAN') return `<tr><td></td><td colspan="5">[ - ] ${esc(r.Uraian)}</td><td class="n">${rp0(r.Jumlah)}</td>${sel}</tr>`;
+          return `<tr><td class="mono mini c-mut">${st.mode === 'item' ? esc(r.Kode_Rekening) : ''}</td><td>${esc(r.Uraian)}${r.Spesifikasi ? `<span class="sub">Spesifikasi: ${esc(r.Spesifikasi)}</span>` : ''}</td><td>${esc(r.Koefisien || rp0(r.Volume))}${ubah && r.Koefisien_Sebelum && r.Koefisien_Sebelum !== r.Koefisien ? `<span class="sub">sebelum ${esc(r.Koefisien_Sebelum)}</span>` : ''}</td><td>${esc(r.Satuan)}</td><td class="n">${rp0(r.Harga)}</td><td class="c">${esc(r.PPN || '-')}</td><td class="n">${rp0(r.Jumlah)}</td>${sel}</tr>`; }).join('')}
+        </tbody><tfoot><tr><td colspan="6">Jumlah Anggaran Sub Kegiatan</td><td class="n">${rp0(totJ)}</td>${ubah ? `<td class="n">${rp0(totS)}</td><td class="n">${totS === '' ? '' : rp0(num(totJ) - num(totS))}</td>` : ''}</tr></tfoot></table></div>
+        ${Math.abs(num(totJ) - num(s.Pagu)) > 1 ? `<div class="note warn" style="margin:12px">${ic('warn', 'sm')}<div>Jumlah rincian (${rp(totJ)}) berbeda dengan pagu sub kegiatan (${rp(s.Pagu)}). Impor ulang PDF SIPD terbaru atau periksa pagu.</div></div>` : ''}`;
+    };
+    RB.ambil(s.ID_SubKeg).then((r) => { rows = r; draw(); }, (e) => { const box = $('#rbBox'); if (box) box.innerHTML = `<div class="card-b"><div class="note err">${ic('warn', 'sm')}<div>${esc(e.message)}</div></div></div>`; });
+    el.onclick = (e) => {
+      const t = e.target.closest('[data-act],[data-mode]'); if (!t) return;
+      if (t.dataset.mode) { st.mode = t.dataset.mode; $$('[data-mode]', el).forEach((b) => b.classList.toggle('pri', b.dataset.mode === st.mode)); if (rows) draw(); return; }
+      const a = t.dataset.act;
+      if (a === 'ubah') Pages.formSubkeg(s);
+      if (a === 'imp') Pages.importData('subkeg');
+      if (a === 'paket') Pages.formPaket(null, { ID_SubKeg: s.ID_SubKeg, Nama_Paket: '', Lokasi: s.Lokasi && !/^Semua/.test(s.Lokasi) ? s.Lokasi : '' });
+      if (a === 'xlsRb') {
+        if (!rows) { toast('Rincian masih dimuat.', 'info'); return; }
+        const H = ['Jenis', 'Kode_Rekening', 'Uraian', 'Spesifikasi', 'Koefisien', 'Satuan', 'Harga', 'PPN', 'Jumlah', 'Koefisien_Sebelum', 'Jumlah_Sebelum', 'Sumber_Dana'];
+        exportXlsx('Rincian_' + s.Kode_SubKeg, [{ name: 'Rincian Belanja', cols: [11, 22, 50, 40, 18, 14, 16, 8, 18, 18, 18, 30], aoa: [['RINCIAN ANGGARAN BELANJA — ' + s.Kode_SubKeg + ' ' + s.Nama_SubKegiatan], [s.Tahap_Anggaran || 'TA ' + th], [], H].concat(rows.map((r) => H.map((k) => r[k]))) }]);
       }
     };
   }
@@ -121,13 +198,17 @@ Pages.formSubkeg = function (s, prefill) {
   const progs = [...new Set(S.t.subkeg.map((x) => x.Kode_Program + '|' + x.Nama_Program))];
   const m = modal({ title: baru ? 'Tambah Sub Kegiatan' : 'Ubah Sub Kegiatan', icon: 'wallet', size: 'lg',
     body: `<form class="fg" id="fSk"><div class="sect">Nomenklatur</div>
-      ${fld({ name: 'Kode_Program', label: 'Kode Program', value: s.Kode_Program, span: 's4', ph: '1.15.02' })}${fld({ name: 'Nama_Program', label: 'Nama Program', value: s.Nama_Program, span: 's8', req: true })}
-      ${fld({ name: 'Kode_Kegiatan', label: 'Kode Kegiatan', value: s.Kode_Kegiatan, span: 's4', ph: '1.15.02.2.01' })}${fld({ name: 'Nama_Kegiatan', label: 'Nama Kegiatan', value: s.Nama_Kegiatan, span: 's8', req: true })}
-      ${fld({ name: 'Kode_SubKeg', label: 'Kode Sub Kegiatan', value: s.Kode_SubKeg, span: 's4', req: true, ph: '1.15.02.2.01.0005' })}${fld({ name: 'Nama_SubKegiatan', label: 'Nama Sub Kegiatan', value: s.Nama_SubKegiatan, span: 's8', req: true })}
+      ${fld({ name: 'Kode_Program', label: 'Kode Program', value: s.Kode_Program, span: 's4', ph: '2.15.03' })}${fld({ name: 'Nama_Program', label: 'Nama Program', value: s.Nama_Program, span: 's8', req: true })}
+      ${fld({ name: 'Kode_Kegiatan', label: 'Kode Kegiatan', value: s.Kode_Kegiatan, span: 's4', ph: '2.15.03.2.12' })}${fld({ name: 'Nama_Kegiatan', label: 'Nama Kegiatan', value: s.Nama_Kegiatan, span: 's8', req: true })}
+      ${fld({ name: 'Kode_SubKeg', label: 'Kode Sub Kegiatan', value: s.Kode_SubKeg, span: 's4', req: true, ph: '2.15.03.2.12.0004' })}${fld({ name: 'Nama_SubKegiatan', label: 'Nama Sub Kegiatan', value: s.Nama_SubKegiatan, span: 's8', req: true })}
       <div class="sect">Target & Anggaran</div>
       ${fld({ name: 'Indikator', label: 'Indikator Kinerja', value: s.Indikator, span: 's6', type: 'textarea', rows: 2 })}${fld({ name: 'Target', label: 'Target', value: s.Target, span: 's3', type: 'num' })}${fld({ name: 'Satuan', label: 'Satuan', value: s.Satuan, span: 's3', ph: 'Paket / Unit / Dokumen' })}
       ${fld({ name: 'Pagu', label: 'Pagu Anggaran', value: s.Pagu, span: 's6', type: 'rp', req: true })}${fld({ name: 'Sumber_Dana', label: 'Sumber Dana', value: s.Sumber_Dana, span: 's6' })}
       ${fld({ name: 'Bidang', label: 'Bidang Pengampu', value: s.Bidang, span: 's6', type: 'select', opts: optBidang('— pilih —'), req: true })}${fld({ name: 'PIC_Email', label: 'Pejabat PIC (verifikator realisasi)', value: s.PIC_Email, span: 's6', type: 'select', opts: pejabatOpts() })}
+      <div class="sect">Informasi DPA / SIPD (opsional)</div>
+      ${fld({ name: 'Lokasi', label: 'Lokasi', value: s.Lokasi, span: 's6' })}${fld({ name: 'Waktu_Pelaksanaan', label: 'Waktu pelaksanaan', value: s.Waktu_Pelaksanaan, span: 's6', ph: 'Januari s.d Desember' })}
+      ${fld({ name: 'Pagu_Sebelum', label: 'Pagu sebelum perubahan', value: s.Pagu_Sebelum, span: 's6', type: 'rp', hint: 'Diisi bila DPA perubahan (DPPA)' })}${fld({ name: 'Tahap_Anggaran', label: 'Tahap anggaran', value: s.Tahap_Anggaran, span: 's6', ph: 'Penetapan APBD / Perubahan APBD ' + S.tahun })}
+      ${fld({ name: 'Capaian_Program', label: 'Capaian program (tolok ukur — target)', value: s.Capaian_Program, ph: 'Konektivitas Laut — 50 Nilai' })}
       <div class="sect">Rencana fisik kumulatif per triwulan (%)</div>
       ${[1, 2, 3, 4].map((i) => fld({ name: 'Rencana_TW' + i, label: 'TW ' + K.ROMAWI[i], value: s['Rencana_TW' + i], span: 's3', type: 'pct' })).join('')}
       <datalist id="dlProg">${progs.map((p) => `<option value="${esc(p.split('|')[1])}">`).join('')}</datalist></form>`,
@@ -765,7 +846,16 @@ const Gen = {
         NAMA_PEJABAT_1: pic.Nama, JABATAN_1: pic.Jabatan, NIP_1: pic.NIP, NAMA_PIMPINAN: at.Nama, JABATAN_PIMPINAN: at.Jabatan, NIP_PIMPINAN: at.NIP,
         PERSEN_SELESAI: fmtN(s.fisik, 1), CAPAIAN_UTAMA: last.Uraian, KENDALA: last.Kendala, RENCANA_TINDAK_LANJUT: last.Rencana_Aksi }); }
     if (p) {
-      const items = PK.items(p.ID_Paket), h = PK.hitung(items, p.PPN_Persen), hps = num(p.Nilai_HPS) || h.total;
+      const items = PK.items(p.ID_Paket), h = PK.hitung(items, p.PPN_Persen, p.Harga_Termasuk_PPN), hps = num(p.Nilai_HPS) || h.total;
+      const dasar = String(p.Dasar_Instruksi || S.settings.DASAR_INSTRUKSI || '').split('\n').map((x) => x.trim()).filter(Boolean), met = String(p.Metode || '');
+      Object.assign(v, { KODE_RUP: p.Kode_RUP, KUALIFIKASI: p.Kualifikasi, IJIN_USAHA: p.Ijin_Usaha, DASAR_INSTRUKSI: dasar.map((x, i) => (i + 1) + '. ' + x).join('\n'), NAMA_PEKERJAAN: p.Nama_Paket, PAGU_DANA: num(p.Pagu_Paket),
+        PERIHAL: 'Instruksi Pengadaan ' + (/E-Purchasing/i.test(met) ? 'E-Purchasing' : met || 'Barang/Jasa'),
+        CARA_PENGADAAN: /^(Tender|Seleksi)$/i.test(met) ? 'SPSE ' + met : /Swakelola/i.test(met) ? 'Swakelola' : 'SPSE Non-Tender',
+        SUMBER_DANA_DOKUMEN: (sk && (num(sk.Pagu_Sebelum) || /perubahan/i.test(sk.Tahap_Anggaran || '')) ? 'DPPA ' : 'DPA ') + (sk ? sk.Tahun : S.tahun),
+        KETERANGAN_PPN: p.Harga_Termasuk_PPN === 'YA' ? '*Harga Sudah Termasuk PPN ' + fmtN(p.PPN_Persen) + '%' : '*Harga belum termasuk PPN; PPN ' + fmtN(p.PPN_Persen) + '% dihitung terpisah',
+        SPESIFIKASI_FUNGSI: p.Spesifikasi_Fungsi, JADWAL_KEDATANGAN: p.Jadwal_Kedatangan, LOKASI_KEDATANGAN: p.Lokasi_Kedatangan || p.Lokasi, METODE_PENGIRIMAN: p.Metode_Pengiriman,
+        JUMLAH_HARGA: Math.round(items.reduce((a, i) => a + num(i.Volume) * num(i.Harga_Satuan), 0) * 100) / 100,
+        PELAYANAN_PENYEDIA: p.Pelayanan_Penyedia || '-', PELATIHAN_TEKNIS: p.Pelatihan_Teknis || '-', PEMELIHARAAN: p.Pemeliharaan || '-', INFORMASI_LAINNYA: p.Informasi_Lainnya || '-' });
       const ppk = Store.user(p.Email_PPK) || {}, pp = Store.user(p.Email_Pejabat_Pengadaan) || {};
       Object.assign(v, { NAMA_PAKET: p.Nama_Paket, JENIS_PENGADAAN: PK.JENIS[p.Jenis_Pengadaan] || p.Jenis_Pengadaan, METODE: p.Metode || v.METODE, PAGU_PAKET: num(p.Pagu_Paket),
         NILAI_HPS: hps, JUMLAH_SEBELUM_PPN: h.sub, NILAI_PPN: Math.max(0, hps - h.sub), PPN_PERSEN: num(p.PPN_Persen), JUMLAH_ITEM: items.length, LOKASI: p.Lokasi, JANGKA_WAKTU: p.Jangka_Waktu,
@@ -803,7 +893,7 @@ const Gen = {
     const paketOpts = S.t.pengadaan.filter((p) => p.Status !== 'BATAL' || p.ID_Paket === ctx.ID_Paket).sort(byKey('Nama_Paket')).map((p) => [p.ID_Paket, p.Nama_Paket]);
     const pejOpts = [['', '— pilih —']].concat(S.t.pengguna.filter((u) => skLingkup(u.Email).length).map((u) => [u.Email, u.Nama]));
     const m = modal({ title: 'Buat Draf Dokumen', icon: 'docadd', size: 'lg', body: '<div id="genBody"></div>', foot: `<span class="mini" id="genOut" style="margin-right:auto"></span><button class="btn" data-x>Batal</button><button class="btn pri" data-go>${ic('docadd', 'sm')}Buat Dokumen</button>` });
-    const area = (kk) => /CATATAN|URAIAN|ARAHAN|KENDALA|CAPAIAN|ALAMAT|RENCANA|DAFTAR|ISI|SPESIFIKASI|INSTRUKSI$|KETERANGAN/.test(kk);
+    const area = (kk) => /CATATAN|URAIAN|ARAHAN|KENDALA|CAPAIAN|ALAMAT|RENCANA|DAFTAR|ISI|SPESIFIKASI|INSTRUKSI$|KETERANGAN|DASAR|INFORMASI/.test(kk);
     const draw = (tpl) => {
       const sk = this.skema(tpl), pre = this.prefill(Object.assign({}, ctx, { jenis: tpl.Jenis }));
       if (tpl.Jenis === 'SPK' && pre.NOMOR_SPK) pre.NOMOR = pre.NOMOR_SPK;
@@ -816,7 +906,7 @@ const Gen = {
         <div class="note info mb">${ic('info', 'sm')}<div>Isian di bawah sudah diisi otomatis dari data aplikasi bila tersedia. Periksa kembali sebelum membuat dokumen.</div></div>
         <form class="fg" id="genF">${fld({ name: '__NOMOR', label: 'Nomor dokumen', value: pre.NOMOR || '', span: 's6', hint: 'Dipakai untuk {{NOMOR}}' })}
         ${nonBlok.filter((x) => x.kunci !== 'NOMOR').map((x) => { const val = pre[x.kunci] != null ? pre[x.kunci] : ''; const tipe = x.tipe === 'tanggal' || /^(TGL|TANGGAL)/.test(x.kunci) ? 'date' : x.tipe === 'area' || x.tipe === 'naskah' || area(x.kunci) ? 'textarea' : x.tipe === 'angka' ? 'num' : 'text';
-          return fld({ name: x.kunci, label: x.label || x.kunci, value: val, type: tipe, rows: x.kunci === 'ISI_INSTRUKSI' ? 8 : 2, span: tipe === 'textarea' ? '' : 's6', hint: '{{' + x.kunci + '}}' + (x.pengubah ? ' · ' + x.pengubah : '') }); }).join('')}</form>
+          return fld({ name: x.kunci, label: x.label || x.kunci, value: val, type: tipe, rows: /ISI_INSTRUKSI|DASAR/.test(x.kunci) ? 7 : 2, span: tipe === 'textarea' ? '' : 's6', hint: '{{' + x.kunci + '}}' + (x.pengubah ? ' · ' + x.pengubah : '') }); }).join('')}</form>
         ${blok.map((bk) => { const cols = (bk.kolom || []).map((c) => ({ kunci: String(c.kunci).split('.').pop(), label: c.label || c.kunci })); const rows = this.blokRows(ctx, bk.kunci); const isItem = this.blokItem(bk.kunci);
           return `<div class="lbl mt mb-s">Tabel berulang {{#${esc(bk.kunci)}}} — ${rows.length} baris dari ${isItem ? 'item HPS paket' : 'data realisasi'}${isItem && !rows.length ? ' <span class="c-warn">(pilih paket yang sudah memiliki item)</span>' : ''}</div><div class="tw"><table class="t light" data-blok="${esc(bk.kunci)}"><thead><tr>${cols.map((c) => `<th>${esc(c.label)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${cols.map((c) => { const val = r[c.kunci] != null ? r[c.kunci] : ''; return area(c.kunci) ? `<td><textarea class="in" rows="2" data-k="${esc(c.kunci)}" style="min-width:200px">${esc(val)}</textarea></td>` : `<td><input class="in" data-k="${esc(c.kunci)}" value="${esc(val)}"></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`; }).join('')}`;
     };
@@ -918,7 +1008,8 @@ Pages.add({
       ${fld({ name: 'ALAMAT_INSTANSI', label: 'Alamat instansi (kop surat)', value: s.ALAMAT_INSTANSI, type: 'textarea', rows: 2 })}
       ${fld({ name: 'TAHUN_AKTIF', label: 'Tahun anggaran aktif', value: s.TAHUN_AKTIF, span: 's3', type: 'num' })}${fld({ name: 'TRIWULAN_AKTIF', label: 'Triwulan aktif', value: s.TRIWULAN_AKTIF, span: 's3', type: 'select', opts: [1, 2, 3, 4].map((t) => [t, 'Triwulan ' + K.ROMAWI[t]]) })}${fld({ name: 'AMBANG_DEVIASI', label: 'Ambang deviasi (%)', value: s.AMBANG_DEVIASI, span: 's3', type: 'num' })}${fld({ name: 'HARI_TUTUP_LAPORAN', label: 'Tanggal tutup laporan', value: s.HARI_TUTUP_LAPORAN, span: 's3', type: 'num' })}
       ${fld({ name: 'DAFTAR_BIDANG', label: 'Daftar bidang (pisahkan dengan ;)', value: s.DAFTAR_BIDANG, span: 's8' })}${fld({ name: 'MAKS_UNGGAH_MB', label: 'Maks. unggah (MB)', value: s.MAKS_UNGGAH_MB, span: 's4', type: 'num', hint: 'Disarankan ≤ 10 MB' })}
-      ${fld({ name: 'NOTIF_EMAIL', label: 'Pengingat email harian', value: s.NOTIF_EMAIL, span: 's6', type: 'select', opts: [['TIDAK', 'Nonaktif'], ['YA', 'Aktif (jam 07.00 WITA)']] })}${fld({ name: 'NAMA_APLIKASI', label: 'Nama aplikasi', value: s.NAMA_APLIKASI, span: 's6' })}</form>
+      ${fld({ name: 'NOTIF_EMAIL', label: 'Pengingat email harian', value: s.NOTIF_EMAIL, span: 's6', type: 'select', opts: [['TIDAK', 'Nonaktif'], ['YA', 'Aktif (jam 07.00 WITA)']] })}${fld({ name: 'NAMA_APLIKASI', label: 'Nama aplikasi', value: s.NAMA_APLIKASI, span: 's6' })}
+      ${fld({ name: 'DASAR_INSTRUKSI', label: 'Dasar bawaan Instruksi PPK (satu dasar per baris)', value: s.DASAR_INSTRUKSI, type: 'textarea', rows: 5, hint: 'Dipakai saat paket pengadaan baru dibuat; dapat diubah per paket. Periksa kembali peraturan yang berlaku.' })}</form>
       <div class="row mt"><button class="btn pri" data-save>${ic('save', 'sm')}Simpan Pengaturan</button></div>`;
     b.onclick = (e) => { const t = e.target.closest('[data-save]'); if (!t) return; const v = formVals($('#fSet')); if (v.MAKS_UNGGAH_MB > 25) { toast('Batas unggah maksimal 25 MB (keterbatasan Apps Script).', 'warn'); return; }
       const old = Object.assign({}, S.settings); mutate('pengaturan.simpan', v, { btn: t, optimistic: () => { Object.assign(S.settings, v); Store.bump(); Store.saveSoon(); return () => { S.settings = old; }; }, onOk: (d) => { if (d.settings) { S.settings = d.settings; App.chrome(); } }, okMsg: 'Pengaturan disimpan.' }); };
@@ -980,7 +1071,23 @@ Pages.add({
     };
   },
   async sistem(b) {
-    b.innerHTML = `<div class="row mb"><button class="btn" data-ref>${ic('refresh', 'sm')}Muat ulang status</button><button class="btn" data-ver>${ic('flag', 'sm')}Riwayat versi</button><button class="btn" data-perf>${ic('speed', 'sm')}Tampilkan Perf.table() di console</button></div><div id="sysBox">${'<div class="sk" style="margin:10px 0"></div>'.repeat(6)}</div>`;
+    b.innerHTML = `<div class="card mb" id="ctBox"><div class="card-b"><div class="sk"></div></div></div><div class="row mb"><button class="btn" data-ref>${ic('refresh', 'sm')}Muat ulang status</button><button class="btn" data-ver>${ic('flag', 'sm')}Riwayat versi</button><button class="btn" data-perf>${ic('speed', 'sm')}Tampilkan Perf.table() di console</button></div><div id="sysBox">${'<div class="sk" style="margin:10px 0"></div>'.repeat(6)}</div>`;
+    const muatContoh = async () => {
+      const r = await api('contoh.status', {}, { quiet: true }), box = $('#ctBox'); if (!box) return;
+      const d = (r && r.data) || {}, j = d.jumlah || {};
+      box.innerHTML = `<div class="card-h"><h3>${ic('flag', 'sm')}Data contoh (dummy)</h3><p>Untuk mencoba aplikasi: pengguna @contoh.test, Sub Kegiatan format SIPD-RI beserta rincian belanja, paket pengadaan (Instruksi/HPS/Spesifikasi), kontrak, realisasi bulanan, dan evaluasi — tahun ${esc(d.tahun || S.tahun)}.</p></div>
+        <div class="card-b">${d.ada ? `<div class="note warn mb">${ic('warn', 'sm')}<div><b>Data contoh aktif (${fmtN(d.total)} baris):</b> ${esc(Object.keys(j).filter((k) => j[k]).map((k) => k.replace(/_/g, ' ') + ' ' + j[k]).join(' · '))}. Hapus sebelum aplikasi dipakai resmi — semua ID berawalan <code>CTH-</code>.</div></div>` : `<p class="mini" style="margin:0 0 12px">Belum ada data contoh. Kode Sub Kegiatan yang sudah dipakai data Anda dilewati otomatis.</p>`}
+        <div class="row">${d.ada ? `<button class="btn danger" data-ct="hapus">${ic('trash', 'sm')}Hapus data contoh</button>` : `<button class="btn gold" data-ct="isi">${ic('add', 'sm')}Isi data contoh</button>`}<span class="mini">Atau dari editor Apps Script: <code>isiDataContoh()</code> / <code>hapusDataContoh()</code></span></div></div>`;
+    };
+    muatContoh();
+    $('#ctBox').addEventListener('click', async (e) => {
+      const t = e.target.closest('[data-ct]'); if (!t) return; const isi = t.dataset.ct === 'isi';
+      if (!(await confirmBox(isi ? 'Tambahkan data contoh ke database? Data contoh dapat dihapus kapan saja.' : 'Hapus SEMUA data contoh, termasuk data yang Anda tambahkan pada Sub Kegiatan/kontrak/paket contoh? Berkas di Google Drive tidak ikut dihapus.', isi ? { ok: 'Isi data contoh' } : { danger: true, ok: 'Hapus' }))) return;
+      t.classList.add('busy'); const r = await api(isi ? 'contoh.isi' : 'contoh.hapus', {}); t.classList.remove('busy');
+      if (!r.success) { toast(r.message, 'err'); return; }
+      toast(r.message, 'ok'); ((r.data && r.data.peringatan) || []).forEach((w) => toast(w, 'warn'));
+      RB.reset(); await Sync.run({ force: true }); muatContoh();
+    });
     const load = async () => {
       const r = await api('sistem.status', {}); const box = $('#sysBox'); if (!box) return;
       if (!r.success) { box.innerHTML = `<div class="note err">${ic('warn', 'sm')}<div>${esc(r.message)}</div></div>`; return; }
