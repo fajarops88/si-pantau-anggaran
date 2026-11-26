@@ -853,7 +853,9 @@ const Monev = {
    ===================================================================== */
 const Gen = {
   PAKET: ['INSTRUKSI', 'HPS', 'SPESIFIKASI'],
-  JENIS: { SPK: 'SPK / Kontrak', BAST: 'BAST', LAPORAN: 'Laporan', INSTRUKSI: 'Instruksi PPK', HPS: 'HPS', SPESIFIKASI: 'Spesifikasi Teknis', LAINNYA: 'Lainnya' },
+  JENIS: { SPK: 'SPK / Kontrak', SURAT_PESANAN: 'Surat Pesanan', BAPP: 'BAPP (Penyelesaian Pekerjaan)', BAST: 'BAST', LAPORAN: 'Laporan', INSTRUKSI: 'Instruksi PPK', HPS: 'HPS', SPESIFIKASI: 'Spesifikasi Teknis', LAINNYA: 'Lainnya' },
+  /** Jenis yang isiannya diambil dari kontrak e-Katalog (Surat Pesanan → BAPP per termin → BAST) */
+  EKAT: ['SURAT_PESANAN', 'BAPP', 'BAST'],
   skema(t) { try { return JSON.parse(t.Skema || '[]'); } catch (e) { return []; } },
   /** Template yang relevan: paket pengadaan → Instruksi/HPS/Spesifikasi(+Lainnya); konteks lain → selain ketiganya */
   tplFor(ctx) {
@@ -865,7 +867,7 @@ const Gen = {
     const docs = S.t.dokumen.filter((d) => (ctx.ID_Paket ? d.ID_Paket === ctx.ID_Paket : !ctx.ID_Kontrak || d.ID_Kontrak === ctx.ID_Kontrak)).sort((a, b) => String(b.Dibuat).localeCompare(String(a.Dibuat)));
     const btn = (d) => `${d.File_Pdf ? `<button class="btn sm" data-dok="${esc(d.ID)}" data-fmt="pdf">${ic('pdf', 'sm')}PDF</button>` : ''} ${this.isSheets(d) ? `<button class="btn sm" data-dok="${esc(d.ID)}" data-fmt="xlsx">${ic('excel', 'sm')}XLSX</button>` : d.File_Docs ? `<button class="btn sm" data-dok="${esc(d.ID)}" data-fmt="docx">${ic('doc', 'sm')}DOCX</button>` : ''}`;
     return `<div class="note warn mb">${ic('info', 'sm')}<div>Dokumen yang dihasilkan adalah <b>draf siap cetak</b> (Word/Excel + PDF). Tanda tangan tetap basah: cetak → tandatangani → scan → unggah ke Arsip Dokumen. Template disusun dari kerangka umum dan wajib direview bagian hukum/PBJ sebelum dipakai resmi.</div></div>
-      ${tps.length ? `<div class="docs mb">${tps.map((t) => `<div class="doc"><div class="di oth">${ic(this.isSheets(t) ? 'excel' : 'docadd')}</div><div style="flex:1"><b>${esc(t.Nama)}</b><small>${esc(this.JENIS[t.Jenis] || t.Jenis)} · ${this.isSheets(t) ? 'Excel' : 'Word'} · v${esc(t.Versi || 1)} · ${this.skema(t).length} isian</small>${Can.generate() ? `<div class="acts"><button class="btn sm pri" data-gen="${esc(t.ID_Template)}">${ic('docadd', 'sm')}Buat dokumen</button></div>` : ''}</div></div>`).join('')}</div>` : `<div class="empty">${ic('doc')}<b>Belum ada template dokumen${ctx.ID_Paket ? ' pengadaan' : ''}</b><div>Admin dapat mengunggah template ${ctx.ID_Paket ? 'Instruksi/HPS/Spesifikasi' : 'SPK/BAST/Laporan'} (Word, Excel, atau PDF) di menu Pengaturan → Template Dokumen.</div>${Can.admin() ? '<a class="btn gold mt" href="#/pengaturan?tab=template">' + ic('upload', 'sm') + 'Unggah template</a>' : ''}</div>`}
+      ${tps.length ? `<div class="docs mb">${tps.map((t) => `<div class="doc"><div class="di oth">${ic(this.isSheets(t) ? 'excel' : 'docadd')}</div><div style="flex:1"><b>${esc(t.Nama)}</b><small>${esc(this.JENIS[t.Jenis] || t.Jenis)} · ${this.isSheets(t) ? 'Excel' : 'Word'} · v${esc(t.Versi || 1)} · ${this.skema(t).length} isian</small>${Can.generate() ? `<div class="acts"><button class="btn sm pri" data-gen="${esc(t.ID_Template)}">${ic('docadd', 'sm')}Buat dokumen</button></div>` : ''}</div></div>`).join('')}</div>` : `<div class="empty">${ic('doc')}<b>Belum ada template dokumen${ctx.ID_Paket ? ' pengadaan' : ''}</b><div>Admin dapat mengunggah template ${ctx.ID_Paket ? 'Instruksi/HPS/Spesifikasi' : 'SPK/Surat Pesanan/BAPP/BAST/Laporan'} (Word, Excel, atau PDF) di menu Pengaturan → Template Dokumen.</div>${Can.admin() ? '<a class="btn gold mt" href="#/pengaturan?tab=template">' + ic('upload', 'sm') + 'Unggah template</a>' : ''}</div>`}
       <div class="lbl mb-s">Riwayat dokumen yang dihasilkan (${docs.length})</div>
       ${docs.length ? `<div class="tw"><table class="t light"><thead><tr><th>Dokumen</th><th>Nomor</th><th>Terkait</th><th>Dibuat</th><th></th></tr></thead><tbody>${docs.map((d) => { const t = Store.get('template', d.ID_Template) || {}; const k = Store.get('kontrak', d.ID_Kontrak); const p = d.ID_Paket ? Store.get('pengadaan', d.ID_Paket) : null; const s = Store.get('subkeg', d.ID_SubKeg); return `<tr><td><b>${esc(t.Nama || d.Jenis)}</b><span class="sub">${esc(this.JENIS[d.Jenis] || d.Jenis)}</span></td><td class="mono">${esc(d.Nomor || '-')}</td><td>${esc(p ? p.Nama_Paket : k ? k.No_SPK : s ? s.Nama_SubKegiatan : '-')}</td><td>${esc(Store.nama(d.Oleh))}<span class="sub">${tgl(String(d.Dibuat).slice(0, 10))}</span></td><td class="acts">${btn(d)}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="mini">Belum ada dokumen.</p>'}`;
   },
@@ -888,7 +890,7 @@ const Gen = {
     const st = S.settings, c = this.konteks(ctx), k = c.k, p = c.p, sk = c.sk;
     const pic = sk ? Store.user(sk.PIC_Email) || {} : {}, at = pic.Atasan_Email ? Store.user(pic.Atasan_Email) || {} : {};
     const tw = num(ctx.tw || st.TRIWULAN_AKTIF) || 1, d = new Date();
-    const v = { INSTITUSI_NAMA: st.NAMA_INSTANSI, INSTITUSI_ALAMAT: st.ALAMAT_INSTANSI, TEMPAT: st.KOTA, TAHUN: S.tahun, TANGGAL: todayISO(), HARI: K.HARI[d.getDay()],
+    const v = { INSTITUSI_NAMA: st.NAMA_INSTANSI, INSTITUSI_ALAMAT: st.ALAMAT_INSTANSI, NPWP_INSTANSI: st.NPWP_INSTANSI, TEMPAT: st.KOTA, TAHUN: S.tahun, TANGGAL: todayISO(), HARI: K.HARI[d.getDay()],
       TRIWULAN: K.ROMAWI[tw], PERIODE: 'Triwulan ' + K.ROMAWI[tw] + ' TA ' + S.tahun, JENIS_LAPORAN: 'TRIWULANAN' };
     if (k) Object.assign(v, { NOMOR_SPK: k.No_SPK, TGL_SPK: k.Tgl_SPK, URAIAN_PEKERJAAN: k.Uraian_Pekerjaan, NAMA_PENYEDIA: k.Penyedia, NAMA_DIREKTUR: k.Direktur, JABATAN_DIREKTUR: k.Jabatan_Direktur, ALAMAT_PENYEDIA: k.Alamat_Penyedia, NPWP: k.NPWP,
       NILAI_KONTRAK: num(k.Nilai_Kontrak), TGL_MULAI: k.Tgl_Mulai, TGL_SELESAI: k.Tgl_Selesai, NAMA_BANK: k.Nama_Bank, NOMOR_REKENING: k.No_Rekening, NAMA_REKENING: k.Nama_Rekening, METODE: k.Metode });
@@ -914,9 +916,23 @@ const Gen = {
         NAMA_PPK: ppk.Nama, NIP_PPK: ppk.NIP, JABATAN_PPK: ppk.Jabatan, NAMA_PEJABAT_PENGADAAN: pp.Nama, NIP_PEJABAT_PENGADAAN: pp.NIP, JABATAN_PEJABAT_PENGADAAN: pp.Jabatan,
         SUBTOTAL: h.sub, TOTAL_JUMLAH: h.sub, TOTAL_HPS: hps });
     } else Object.assign(v, this.totalReal(ctx));
+    if (k) Object.assign(v, this.dataKontrak(k, p, sk, v));
     if (ctx.email) { const u = Store.user(ctx.email) || {}, a2 = Store.user(u.Atasan_Email) || {}; const ev = S.t.evaluasi.find((x) => norm(x.Email_Pejabat) === norm(ctx.email) && x.Triwulan === tw) || {};
       Object.assign(v, { NAMA_PEJABAT_1: u.Nama, JABATAN_1: u.Jabatan, NIP_1: u.NIP, BIDANG: u.Bidang, NAMA_PIMPINAN: a2.Nama, JABATAN_PIMPINAN: a2.Jabatan, NIP_PIMPINAN: a2.NIP, ARAHAN_PIMPINAN: ev.Arahan }); }
     return v;
+  },
+  /** Isian Surat Pesanan / BAPP / BAST dari kontrak. Nilai kontrak dianggap SUDAH termasuk PPN;
+      tarif PPN diambil dari paket tertaut (tanpa paket → 0, isi manual). */
+  dataKontrak(k, p, sk, v) {
+    v = v || {};
+    const r = p ? num(p.PPN_Persen) : 0, nilai = num(k.Nilai_Kontrak), dpp = r ? Math.round(nilai / (1 + r / 100)) : nilai;
+    const bapp = S.t.dokumen.filter((d) => d.ID_Kontrak === k.ID_Kontrak && d.Jenis === 'BAPP' && !d._pending).sort((a, b) => String(a.Dibuat).localeCompare(String(b.Dibuat)));
+    const rr = Calc.realRows(k.ID_SubKeg).filter((x) => Calc.counted(x) && x.ID_Kontrak === k.ID_Kontrak), fisik = rr.length ? num(rr[rr.length - 1].Realisasi_Fisik) : 0;
+    const ppk = p ? Store.user(p.Email_PPK) || {} : {};
+    return { NILAI_SEBELUM_PPN: dpp, NILAI_PPN_KONTRAK: nilai - dpp, PPN_PERSEN: r, JUMLAH_TERMIN: Math.max(1, bapp.length), TERMIN_KE: bapp.length + 1,
+      NOMOR_BAPP: bapp.map((d) => d.Nomor).filter(Boolean).join(', '), PERSEN_PEKERJAAN: String(Math.round((fisik > 0 ? Math.min(fisik, 100) : 100) * 100) / 100).replace('.', ','),
+      NAMA_PENERIMA: v.NAMA_PENERIMA || ppk.Nama || '', TGL_SELESAI_PEKERJAAN: k.Tgl_Selesai, TGL_PEMERIKSAAN: todayISO(),
+      LOKASI: v.LOKASI || (sk && sk.Lokasi) || S.settings.KOTA || '', NAMA_PEKERJAAN: v.NAMA_PEKERJAAN || k.Uraian_Pekerjaan };
   },
   /** Kunci blok yang diisi dari item HPS paket (selain itu: baris realisasi) */
   blokItem(kunci) { return /ITEM|HPS|BARANG|SPEK|RINCIAN/.test(String(kunci || '').toUpperCase()); },
@@ -928,6 +944,11 @@ const Gen = {
     return { TOTAL_PAGU: pg, TOTAL_KEUANGAN: ku, TOTAL_FISIK: fmtN(pg ? fw / pg : 0, 1) };
   },
   blokRows(ctx, kunci) {
+    if (/TERMIN/.test(String(kunci || '').toUpperCase())) {   // skema pembayaran Surat Pesanan: default 1 termin = seluruh nilai kontrak
+      const c = this.konteks(ctx); if (!c.k) return [];
+      const x = this.dataKontrak(c.k, c.p, c.sk);
+      return [{ NO: 1, NAMA: c.k.Uraian_Pekerjaan, NILAI: x.NILAI_SEBELUM_PPN, PPN: x.NILAI_PPN_KONTRAK, TOTAL: num(c.k.Nilai_Kontrak), SELESAI: c.k.Tgl_Selesai }];
+    }
     if (this.blokItem(kunci)) {
       const p = this.konteks(ctx).p; if (!p) return [];
       return PK.items(p.ID_Paket).map((x, i) => ({ NO: i + 1, URAIAN: x.Uraian, SPESIFIKASI: x.Spesifikasi, VOLUME: num(x.Volume), SATUAN: x.Satuan, HARGA_SATUAN: num(x.Harga_Satuan), JUMLAH: Math.round(num(x.Volume) * num(x.Harga_Satuan)), SUMBER_HARGA: x.Sumber_Harga, KETERANGAN: x.Keterangan }));
@@ -945,9 +966,11 @@ const Gen = {
     const pejOpts = [['', '— pilih —']].concat(S.t.pengguna.filter((u) => skLingkup(u.Email).length).map((u) => [u.Email, u.Nama]));
     const m = modal({ title: 'Buat Draf Dokumen', icon: 'docadd', size: 'lg', body: '<div id="genBody"></div>', foot: `<span class="mini" id="genOut" style="margin-right:auto"></span><button class="btn" data-x>Batal</button><button class="btn pri" data-go>${ic('docadd', 'sm')}Buat Dokumen</button>` });
     const area = (kk) => /CATATAN|URAIAN|ARAHAN|KENDALA|CAPAIAN|ALAMAT|RENCANA|DAFTAR|ISI|SPESIFIKASI|INSTRUKSI$|KETERANGAN|DASAR|INFORMASI/.test(kk);
+    const blokCols = {};
+    const barisBlok = (cols, r) => `<tr>${cols.map((c) => { const val = r[c.kunci] != null ? r[c.kunci] : ''; return area(c.kunci) ? `<td><textarea class="in" rows="2" data-k="${esc(c.kunci)}" style="min-width:200px">${esc(val)}</textarea></td>` : `<td><input class="in" data-k="${esc(c.kunci)}" value="${esc(val)}"></td>`; }).join('')}<td><button type="button" class="btn ghost icon" data-hapus title="Hapus baris">${ic('close', 'sm')}</button></td></tr>`;
     const draw = (tpl) => {
-      const sk = this.skema(tpl), pre = this.prefill(Object.assign({}, ctx, { jenis: tpl.Jenis }));
-      if (tpl.Jenis === 'SPK' && pre.NOMOR_SPK) pre.NOMOR = pre.NOMOR_SPK;
+      const sk = this.skema(tpl), pre = this.prefill(Object.assign({}, ctx, { jenis: tpl.Jenis })), ekat = this.EKAT.indexOf(tpl.Jenis) > -1;
+      if ((tpl.Jenis === 'SPK' || tpl.Jenis === 'SURAT_PESANAN') && pre.NOMOR_SPK) pre.NOMOR = pre.NOMOR_SPK;
       if (tpl.Jenis === 'INSTRUKSI' && pre.NOMOR_INSTRUKSI) pre.NOMOR = pre.NOMOR_INSTRUKSI;
       const nonBlok = sk.filter((x) => !x.blok), blok = sk.filter((x) => x.blok);
       const c2 = paketMode ? `<div class="f s4"><label>Paket pengadaan (isi otomatis)</label>${selectHtml('ctxPk', paketOpts, ctx.ID_Paket)}</div>` : `<div class="f s4"><label>Kontrak (isi otomatis)</label>${selectHtml('ctxK', kontrakOpts, ctx.ID_Kontrak || '')}</div>`;
@@ -958,10 +981,20 @@ const Gen = {
         <form class="fg" id="genF">${fld({ name: '__NOMOR', label: 'Nomor dokumen', value: pre.NOMOR || '', span: 's6', hint: 'Dipakai untuk {{NOMOR}}' })}
         ${nonBlok.filter((x) => x.kunci !== 'NOMOR').map((x) => { const val = pre[x.kunci] != null ? pre[x.kunci] : ''; const tipe = x.tipe === 'tanggal' || /^(TGL|TANGGAL)/.test(x.kunci) ? 'date' : x.tipe === 'area' || x.tipe === 'naskah' || area(x.kunci) ? 'textarea' : x.tipe === 'angka' ? 'num' : 'text';
           return fld({ name: x.kunci, label: x.label || x.kunci, value: val, type: tipe, rows: /ISI_INSTRUKSI|DASAR/.test(x.kunci) ? 7 : 2, span: tipe === 'textarea' ? '' : 's6', hint: '{{' + x.kunci + '}}' + (x.pengubah ? ' · ' + x.pengubah : '') }); }).join('')}</form>
-        ${blok.map((bk) => { const cols = (bk.kolom || []).map((c) => ({ kunci: String(c.kunci).split('.').pop(), label: c.label || c.kunci })); const rows = this.blokRows(ctx, bk.kunci); const isItem = this.blokItem(bk.kunci);
-          return `<div class="lbl mt mb-s">Tabel berulang {{#${esc(bk.kunci)}}} — ${rows.length} baris dari ${isItem ? 'item HPS paket' : 'data realisasi'}${isItem && !rows.length ? ' <span class="c-warn">(pilih paket yang sudah memiliki item)</span>' : ''}</div><div class="tw"><table class="t light" data-blok="${esc(bk.kunci)}"><thead><tr>${cols.map((c) => `<th>${esc(c.label)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${cols.map((c) => { const val = r[c.kunci] != null ? r[c.kunci] : ''; return area(c.kunci) ? `<td><textarea class="in" rows="2" data-k="${esc(c.kunci)}" style="min-width:200px">${esc(val)}</textarea></td>` : `<td><input class="in" data-k="${esc(c.kunci)}" value="${esc(val)}"></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`; }).join('')}`;
+        ${blok.map((bk) => { const cols = (bk.kolom || []).map((c) => ({ kunci: String(c.kunci).split('.').pop(), label: c.label || c.kunci })); const rows = this.blokRows(ctx, bk.kunci); const isTermin = /TERMIN/.test(String(bk.kunci).toUpperCase()), isItem = !isTermin && this.blokItem(bk.kunci);
+          blokCols[bk.kunci] = cols;
+          const sumber = isTermin ? 'nilai kontrak (1 termin; tambah baris bila bertermin)' : isItem ? 'item HPS paket' : 'data realisasi';
+          let beda = '';
+          if (isItem && ekat && pre.NILAI_KONTRAK && rows.length) { const jm = rows.reduce((a, r) => a + num(r.JUMLAH), 0); if (Math.abs(jm - num(pre.NILAI_SEBELUM_PPN)) > 1 && Math.abs(jm - num(pre.NILAI_KONTRAK)) > 1) beda = `<div class="note warn mb-s">${ic('warn', 'sm')}<div>Jumlah item dari HPS (${rp(jm)}) berbeda dengan nilai kontrak (${rp(pre.NILAI_KONTRAK)}${num(pre.NILAI_PPN_KONTRAK) ? ', sebelum PPN ' + rp(pre.NILAI_SEBELUM_PPN) : ''}). Sesuaikan harga atau jumlah per baris dengan kontrak.</div></div>`; }
+          return `<div class="lbl mt mb-s">Tabel berulang {{#${esc(bk.kunci)}}} — ${rows.length} baris dari ${sumber}${isItem && !rows.length ? ' <span class="c-warn">(pilih ' + (paketMode ? 'paket' : 'kontrak yang tertaut paket') + ' yang sudah memiliki item, atau tambah baris)</span>' : ''}</div>${beda}<div class="tw"><table class="t light" data-blok="${esc(bk.kunci)}"><thead><tr>${cols.map((c) => `<th>${esc(c.label)}</th>`).join('')}<th></th></tr></thead><tbody>${rows.map((r) => barisBlok(cols, r)).join('')}</tbody></table></div><div class="row mt-s"><button type="button" class="btn sm" data-tambah="${esc(bk.kunci)}">${ic('add', 'sm')}Tambah baris</button></div>`; }).join('')}`;
     };
     let cur = tps.find((x) => x.ID_Template === ctx.ID_Template) || tps[0]; draw(cur);
+    m.el.addEventListener('click', (e) => {
+      const h = e.target.closest('[data-hapus]'); if (h) { h.closest('tr').remove(); return; }
+      const t = e.target.closest('[data-tambah]'); if (!t) return;
+      const tb = m.el.querySelector('[data-blok="' + t.dataset.tambah + '"] tbody'), cols = blokCols[t.dataset.tambah] || [];
+      if (tb) { tb.insertAdjacentHTML('beforeend', barisBlok(cols, { NO: tb.children.length + 1 })); const i = tb.lastElementChild.querySelector('[data-k]:not([data-k=NO])'); if (i) i.focus(); }
+    });
     m.el.addEventListener('change', (e) => { const n = e.target.name; if (n === 'tpl') { cur = Store.get('template', e.target.value); draw(cur); } if (n === 'ctxK') { ctx.ID_Kontrak = e.target.value; draw(cur); } if (n === 'ctxPk') { ctx.ID_Paket = e.target.value; draw(cur); } if (n === 'ctxP') { ctx.email = e.target.value; draw(cur); } if (n === 'ctxTw') { ctx.tw = num(e.target.value); draw(cur); } });
     m.el.querySelector('[data-go]').onclick = (e) => {
       const isian = formVals($('#genF', m.el)); const Nomor = isian.__NOMOR; delete isian.__NOMOR; isian.NOMOR = Nomor;
@@ -1057,6 +1090,7 @@ Pages.add({
     const s = S.settings;
     b.innerHTML = `<form class="fg" id="fSet" style="max-width:860px">${fld({ name: 'NAMA_INSTANSI', label: 'Nama instansi', value: s.NAMA_INSTANSI, span: 's6' })}${fld({ name: 'KOTA', label: 'Kota (tempat tanda tangan)', value: s.KOTA, span: 's6' })}
       ${fld({ name: 'ALAMAT_INSTANSI', label: 'Alamat instansi (kop surat)', value: s.ALAMAT_INSTANSI, type: 'textarea', rows: 2 })}
+      ${fld({ name: 'NPWP_INSTANSI', label: 'NPWP instansi', value: s.NPWP_INSTANSI, span: 's6', ph: '00.000.000.0-000.000', hint: 'Dipakai di Surat Pesanan, BAPP, dan BAST e-Katalog ({{NPWP_INSTANSI}})' })}
       ${fld({ name: 'TAHUN_AKTIF', label: 'Tahun anggaran aktif', value: s.TAHUN_AKTIF, span: 's3', type: 'num' })}${fld({ name: 'TRIWULAN_AKTIF', label: 'Triwulan aktif', value: s.TRIWULAN_AKTIF, span: 's3', type: 'select', opts: [1, 2, 3, 4].map((t) => [t, 'Triwulan ' + K.ROMAWI[t]]) })}${fld({ name: 'AMBANG_DEVIASI', label: 'Ambang deviasi (%)', value: s.AMBANG_DEVIASI, span: 's3', type: 'num' })}${fld({ name: 'HARI_TUTUP_LAPORAN', label: 'Tanggal tutup laporan', value: s.HARI_TUTUP_LAPORAN, span: 's3', type: 'num' })}
       ${fld({ name: 'DAFTAR_BIDANG', label: 'Daftar bidang (pisahkan dengan ;)', value: s.DAFTAR_BIDANG, span: 's8' })}${fld({ name: 'MAKS_UNGGAH_MB', label: 'Maks. unggah (MB)', value: s.MAKS_UNGGAH_MB, span: 's4', type: 'num', hint: 'Disarankan ≤ 10 MB' })}
       ${fld({ name: 'NOTIF_EMAIL', label: 'Pengingat email harian', value: s.NOTIF_EMAIL, span: 's6', type: 'select', opts: [['TIDAK', 'Nonaktif'], ['YA', 'Aktif (jam 07.00 WITA)']] })}${fld({ name: 'NAMA_APLIKASI', label: 'Nama aplikasi', value: s.NAMA_APLIKASI, span: 's6' })}
@@ -1079,7 +1113,7 @@ Pages.add({
       const fl = files[0], ext = (fl.name.match(/\.(docx|xlsx|pdf)$/i) || [])[1]; if (!ext) { toast('Hanya file .docx, .xlsx, atau .pdf.', 'warn'); return; }
       if (fl.size > 10 * 1048576) { toast('Berkas template maksimal 10 MB.', 'warn'); return; }
       if (!f.Nama.value) f.Nama.value = fl.name.replace(/\.(docx|xlsx|pdf)$/i, '').replace(/_/g, ' ');
-      if (!f.ID_Template.value) { const n = fl.name; f.Jenis.value = /instruksi/i.test(n) ? 'INSTRUKSI' : /hps|harga.?perkiraan/i.test(n) ? 'HPS' : /spesifikasi|spek/i.test(n) ? 'SPESIFIKASI' : /bast/i.test(n) ? 'BAST' : /lapor/i.test(n) ? 'LAPORAN' : /spk|kontrak/i.test(n) ? 'SPK' : f.Jenis.value; }
+      if (!f.ID_Template.value) { const n = fl.name; f.Jenis.value = /instruksi/i.test(n) ? 'INSTRUKSI' : /hps|harga.?perkiraan/i.test(n) ? 'HPS' : /spesifikasi|spek/i.test(n) ? 'SPESIFIKASI' : /bapp|penyelesaian/i.test(n) ? 'BAPP' : /bast|serah.?terima/i.test(n) ? 'BAST' : /surat.?pesanan/i.test(n) ? 'SURAT_PESANAN' : /lapor/i.test(n) ? 'LAPORAN' : /spk|kontrak/i.test(n) ? 'SPK' : f.Jenis.value; }
       const bar_ = $('#dropT .prog'); bar_.classList.remove('hidden'); bar_.firstChild.style.width = '40%';
       await kirim({ base64File: await fileToB64(fl), namaFile: fl.name, mime: MIME[ext.toLowerCase()] }); bar_.classList.add('hidden');
     });

@@ -4,9 +4,10 @@
    router hash, kalkulasi realisasi, grafik SVG, ekspor, utilitas UI.
    ===================================================================== */
 'use strict';
-const APP_VERSION = '1.2.1';
+const APP_VERSION = '1.2.2';
 /** Riwayat versi frontend (terbaru di atas) — tampil di menu Profil → Riwayat Versi */
 const FE_RIWAYAT = [
+  { versi: '1.2.2', tanggal: '2026-11-26', catatan: ['Jenis template baru: Surat Pesanan dan BAPP (Berita Acara Penyelesaian Pekerjaan), tampil di dokumen Kontrak saja.', 'Isian Surat Pesanan/BAPP/BAST terisi otomatis dari kontrak (nilai sebelum PPN, PPN, termin, nomor BAPP sebelumnya, persen pekerjaan, penerima, lokasi); tabel berulang dapat ditambah/dihapus barisnya.', 'Pengaturan: NPWP instansi. Arsip: jenis BAPP.', 'Placeholder baru: {{NPWP_INSTANSI}}, {{NILAI_SEBELUM_PPN}}, {{NILAI_PPN_KONTRAK}}, {{JUMLAH_TERMIN}}, {{TERMIN_KE}}, {{NOMOR_BAPP}}, {{PERSEN_PEKERJAAN}}, {{NAMA_PENERIMA}}, {{TGL_SELESAI_PEKERJAAN}}, {{TGL_PEMERIKSAAN}}, blok {{#TERMIN}}.'] },
   { versi: '1.2.1', tanggal: '2026-11-26', catatan: ['Paket pengadaan: kolom Kode Rekening; nama paket dipilih dari uraian Rincian DPA (rekening, [#] kelompok, [-] keterangan, atau item) dan kode rekening serta pagu terisi otomatis.', 'Kontrak/SPK: Uraian Pekerjaan dapat dipilih dari uraian Rincian DPA Sub Kegiatan.', 'Placeholder dokumen baru: {{KODE_REKENING}}.'] },
   { versi: '1.2.0', tanggal: '2026-11-26', catatan: ['Perencanaan mengikuti format SIPD-RI: impor PDF "Cetak RKA/DPA Rincian Belanja" per Sub Kegiatan (bisa banyak berkas sekaligus), termasuk dokumen perubahan (sebelum/sesudah).', 'Halaman Rincian Anggaran Belanja per Sub Kegiatan: identitas, indikator, rincian rekening/item, export Excel.', 'Pengadaan mengikuti format Instruksi, HPS, dan Spesifikasi Teknis Dishub: Kode RUP, kualifikasi, ijin usaha, dasar instruksi, harga HPS sudah termasuk PPN, spesifikasi fungsi/waktu/pelayanan.', 'Isi otomatis dari dokumen Instruksi, impor tabel HPS dari PDF, impor spesifikasi mutu dari Word/PDF, dan ambil item HPS dari Rincian DPA.', 'Data contoh (dummy) dapat diisi/dihapus dari Pengaturan → Status Sistem.'] },
   { versi: '1.1.0', tanggal: '2026-11-25', catatan: ['Masuk dengan akun Google tanpa kata sandi (akses darurat tetap tersedia).', 'Menu baru Pengadaan Barang/Jasa: Instruksi PPK ke Pejabat Pengadaan, HPS, dan Spesifikasi Teknis; cetak Word/Excel/PDF dan arsip scan.', 'Impor dari Excel, Word, PDF, dan CSV dengan pratinjau & pencocokan kolom (termasuk DPA dari PDF).', 'Template dokumen bisa diunggah dalam bentuk Word, Excel, atau PDF.', 'Kontrak dapat ditautkan ke paket pengadaan; dokumen paket ikut menandai checklist audit.', 'Semua unggahan dokumen (arsip, lampiran realisasi, scan paket) menerima PDF, Word, dan Excel termasuk format lama .doc/.xls; formulir kontrak dapat diisi otomatis dari dokumen SPK.', 'Riwayat versi tercatat di aplikasi.'] },
@@ -33,7 +34,7 @@ const K = {
   ROMAWI: ['', 'I', 'II', 'III', 'IV'],
   JENIS: [['RKA_DPA', 'RKA / DPA'], ['HPS', 'HPS & Survei Harga'], ['PENETAPAN', 'Penetapan Penyedia'], ['SPK', 'SPK / Kontrak'],
     ['JAMINAN', 'Jaminan Pelaksanaan'], ['SPMK', 'SPMK'], ['LAPORAN', 'Laporan Progres'], ['FOTO', 'Dokumentasi Foto'],
-    ['BAPHP', 'BA Pemeriksaan Hasil Pekerjaan'], ['INSTRUKSI', 'Instruksi PPK'], ['SPEK', 'Spesifikasi Teknis'], ['BAST', 'BAST'], ['SPM', 'SPM'], ['SP2D', 'SP2D'], ['PAJAK', 'Bukti Pajak'], ['LAINNYA', 'Lainnya']],
+    ['BAPHP', 'BA Pemeriksaan Hasil Pekerjaan'], ['BAPP', 'BA Penyelesaian Pekerjaan (BAPP)'], ['INSTRUKSI', 'Instruksi PPK'], ['SPEK', 'Spesifikasi Teknis'], ['BAST', 'BAST'], ['SPM', 'SPM'], ['SP2D', 'SP2D'], ['PAJAK', 'Bukti Pajak'], ['LAINNYA', 'Lainnya']],
   PREDIKAT: { SANGAT_BERHASIL: 'Sangat Berhasil', BERHASIL: 'Berhasil', KURANG_BERHASIL: 'Kurang Berhasil', TIDAK_BERHASIL: 'Tidak Berhasil' },
   PRED_CHIP: { SANGAT_BERHASIL: 'info', BERHASIL: 'ok', KURANG_BERHASIL: 'warn', TIDAK_BERHASIL: 'err' },
   ST_KONTRAK: { DRAF: ['Draf', 'slate'], AKTIF: ['Aktif', 'ok'], SELESAI: ['Selesai', 'info'], PUTUS: ['Putus', 'err'], TERLAMBAT: ['Terlambat', 'err'] },
