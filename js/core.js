@@ -4,9 +4,10 @@
    router hash, kalkulasi realisasi, grafik SVG, ekspor, utilitas UI.
    ===================================================================== */
 'use strict';
-const APP_VERSION = '1.2.3';
+const APP_VERSION = '1.2.4';
 /** Riwayat versi frontend (terbaru di atas) — tampil di menu Profil → Riwayat Versi */
 const FE_RIWAYAT = [
+  { versi: '1.2.4', tanggal: '2026-11-26', catatan: ['Dokumen disarankan per metode, jenis, dan nilai: tab baru di Paket Pengadaan dan bagian di detail Kontrak, lengkap dengan dasar aturan (PerLKPP 3/2026, PerLKPP 2/2026, Perpres Pasal 28), status draf/scan, dan tombol Buat dokumen.', 'Template bawaan siap pasang (Pengaturan → Template Dokumen): Instruksi PPK, HPS, Spesifikasi, Surat Penunjukan, SPK Barang/Lumsum/Harga Satuan/Waktu Penugasan, Surat Perjanjian, Kuitansi, BA Serah Terima Lokasi, BAST Pekerjaan, BAST Akhir, dokumen e-Katalog, dan Laporan Triwulanan.', 'Jenis template baru: Surat Penunjukan Penyedia, Surat Perjanjian, Kuitansi, BA Serah Terima Lokasi, BAST Akhir.'] },
   { versi: '1.2.3', tanggal: '2026-11-26', catatan: ['Rujukan aturan untuk tugas PPK: dokumen harga otomatis bernama Referensi Harga untuk E-purchasing ≤ Rp100 juta (PerLKPP 2/2026 Ps. 13), saran bentuk kontrak menurut nilai (Perpres 16/2018 s.t.d.t.d. 46/2025 Ps. 28), dan jaminan pelaksanaan E-purchasing (PerLKPP 2/2026 Ps. 20).', 'Pemeriksaan teks dasar hukum: judul resmi & aturan yang belum/tidak berlaku pada tanggal dokumen; tombol teks dasar hukum baku.', 'Surat Pesanan/BAPP/BAST e-Katalog ditandai sebagai draf internal; dokumen sah diterbitkan sistem Katalog Elektronik.', 'Master checklist: isi dasar regulasi terverifikasi (HPS, kontrak, jaminan). Placeholder baru: {{JUDUL_HPS}}, {{SINGKATAN_HPS}}, {{DASAR_HARGA}}, {{BENTUK_KONTRAK}}.'] },
   { versi: '1.2.2', tanggal: '2026-11-26', catatan: ['Jenis template baru: Surat Pesanan dan BAPP (Berita Acara Penyelesaian Pekerjaan), tampil di dokumen Kontrak saja.', 'Isian Surat Pesanan/BAPP/BAST terisi otomatis dari kontrak (nilai sebelum PPN, PPN, termin, nomor BAPP sebelumnya, persen pekerjaan, penerima, lokasi); tabel berulang dapat ditambah/dihapus barisnya.', 'Pengaturan: NPWP instansi. Arsip: jenis BAPP.', 'Placeholder baru: {{NPWP_INSTANSI}}, {{NILAI_SEBELUM_PPN}}, {{NILAI_PPN_KONTRAK}}, {{JUMLAH_TERMIN}}, {{TERMIN_KE}}, {{NOMOR_BAPP}}, {{PERSEN_PEKERJAAN}}, {{NAMA_PENERIMA}}, {{TGL_SELESAI_PEKERJAAN}}, {{TGL_PEMERIKSAAN}}, blok {{#TERMIN}}.'] },
   { versi: '1.2.1', tanggal: '2026-11-26', catatan: ['Paket pengadaan: kolom Kode Rekening; nama paket dipilih dari uraian Rincian DPA (rekening, [#] kelompok, [-] keterangan, atau item) dan kode rekening serta pagu terisi otomatis.', 'Kontrak/SPK: Uraian Pekerjaan dapat dipilih dari uraian Rincian DPA Sub Kegiatan.', 'Placeholder dokumen baru: {{KODE_REKENING}}.'] },
@@ -824,6 +825,50 @@ const Aturan = {
     if (lk('9').test(t) && /Nomor 9 Tahun 2021/i.test(t) && d >= '2026-09-01') w.push('PerLKPP 9/2021 sudah dicabut oleh PerLKPP 2/2026 (berlaku 1 September 2026).');
     if (lk('12').test(t) && /Nomor 12 Tahun 2021/i.test(t) && d >= '2026-09-22') w.push('PerLKPP 12/2021 dan perubahannya sudah dicabut oleh PerLKPP 3/2026 (diundangkan 22 September 2026).');
     return w;
+  },
+  /** v1.2.4: daftar dokumen yang disarankan menurut metode, jenis, dan nilai (PETUNJUK, bukan pengganti ketentuan).
+      p = paket (boleh null), k = kontrak (boleh null). Tahap: persiapan → penunjukan/kontrak → pelaksanaan → serah terima.
+      Rujukan butir: Lampiran PerLKPP 3/2026 (I: barang/jasa lainnya & konsultansi nonkonstruksi; II: konstruksi & konsultansi konstruksi). */
+  dokumen(p, k) {
+    p = p || null; k = k || null;
+    const metode = String((k && k.Metode) || (p && p.Metode) || ''), jenis = (p && p.Jenis_Pengadaan) || '', ep = this.epur(metode);
+    const nilai = k ? num(k.Nilai_Kontrak) : p ? num(p.Nilai_HPS) || num(p.Pagu_Paket) : 0, L = 'PerLKPP 3/2026 Lampiran ' + (jenis === 'KONSTRUKSI' ? 'II' : 'I');
+    const out = { metode, jenis, nilai, perkiraan: !k, catatan: [], daftar: [] };
+    const add = (o) => out.daftar.push(Object.assign({ status: 'wajib', perluKontrak: true, ket: '' }, o));
+    if (/swakelola/i.test(metode)) { out.catatan.push('Swakelola tidak memakai dokumen penyedia (HPS, SPK, BAST penyedia). Dokumen swakelola mengikuti pedoman swakelola LKPP tersendiri — belum dimodelkan di aplikasi ini (perlu verifikasi peraturan yang berlaku).'); return out; }
+    if (/lainnya/i.test(metode) && !p) out.catatan.push('Metode "Lainnya": bila ini belanja non-pengadaan (gaji, listrik, air, telepon, BBM, perjalanan dinas), dokumen pertanggungjawabannya mengikuti ketentuan pengelolaan keuangan daerah, bukan dokumen di bawah ini. Perpres 16/2018 Pasal 61 mengecualikan antara lain barang/jasa dengan tarif yang dipublikasikan luas.');
+    if (!metode) out.catatan.push('Metode pemilihan belum diisi — daftar disusun seolah Pengadaan Langsung/Non-Tender.');
+    if (p) {
+      add({ kode: 'INSTRUKSI', tahap: 'Persiapan (PPK)', nama: 'Instruksi PPK kepada Pejabat Pengadaan/UKPBJ', jenis: 'INSTRUKSI', arsip: 'INSTRUKSI', status: 'internal', perluKontrak: false,
+        dasar: 'Praktik internal dinas; PerLKPP 3/2026 mengatur penyampaian dokumen persiapan oleh PPK kepada Pejabat Pengadaan/UKPBJ', ket: 'Nama "Instruksi PPK" tidak disebut dalam peraturan; pengantar dokumen persiapan.' });
+      add({ kode: 'SPESIFIKASI', tahap: 'Persiapan (PPK)', nama: jenis === 'KONSULTANSI' ? 'Kerangka Acuan Kerja (KAK)' : 'Spesifikasi Teknis / KAK', jenis: 'SPESIFIKASI', arsip: 'SPEK', perluKontrak: false, dasar: L + ' butir 2.1' });
+      const hg = this.harga(p), bebas = !ep && num(p.Pagu_Paket) > 0 && num(p.Pagu_Paket) <= 10e6;
+      add({ kode: 'HPS', tahap: 'Persiapan (PPK)', nama: hg.nama, jenis: 'HPS', arsip: 'HPS', perluKontrak: false, status: bebas ? 'opsional' : 'wajib', dasar: hg.dasar + (ep ? '' : '; ' + L + ' butir 2.2'), ket: hg.ket || 'Sah bila ditandatangani PPK.' });
+    }
+    const bk = this.bentukKontrak(nilai, jenis, metode), bentuk = bk ? bk.bentuk : '';
+    const sp = /Surat Perintah Kerja/.test(bentuk), pj = /Surat perjanjian/i.test(bentuk), kw = /^Kuitansi$/.test(bentuk), bp = /Bukti pembelian/.test(bentuk);
+    if (!bk && !ep) out.catatan.push('Nilai belum diketahui — isi pagu/HPS paket atau nilai kontrak agar bentuk kontrak dapat ditentukan.');
+    if (bk) out.bentuk = bk;
+    if (!ep && (sp || pj)) add({ kode: 'PENUNJUKAN', tahap: 'Penunjukan & Kontrak', nama: 'Surat Penunjukan Penyedia (SPPBJ)', jenis: 'PENUNJUKAN', arsip: 'PENETAPAN', status: /pengadaan langsung/i.test(metode) ? 'disarankan' : 'wajib',
+      dasar: L + ' butir 6.1–6.2', ket: 'Paling lambat 5 hari kerja setelah BA hasil pemilihan; tanggal kontrak tidak boleh mendahului surat ini.' + (/pengadaan langsung/i.test(metode) ? ' Untuk Pengadaan Langsung periksa kembali kewajibannya (perlu verifikasi).' : '') });
+    if (ep) {
+      add({ kode: 'SURAT_PESANAN', tahap: 'Penunjukan & Kontrak', nama: 'Surat/Bukti Pesanan e-Katalog', jenis: 'SURAT_PESANAN', arsip: 'SPK', dasar: this.PERPRES + ' Pasal 28 ayat (6); PerLKPP 2/2026 Pasal 19', ket: 'Yang sah diterbitkan & ditandatangani elektronik di sistem Katalog; draf di sini untuk arsip internal.' });
+      add({ kode: 'BAPP', tahap: 'Pelaksanaan', nama: 'BA Penyelesaian Pekerjaan (BAPP) per termin', jenis: 'BAPP', arsip: 'BAPP', status: 'disarankan', dasar: 'Kebutuhan pembayaran per termin (draf internal)' });
+      add({ kode: 'BAST', tahap: 'Serah Terima', nama: 'BAST e-Katalog', jenis: 'BAST', cari: 'katalog', arsip: 'BAST', dasar: 'PerLKPP 2/2026; ' + L + ' butir 7.1', ket: 'Draf internal; BAST sah mengikuti sistem Katalog bila tersedia di sana.' });
+    } else if (bk) {
+      if (bp) add({ kode: 'BUKTI', tahap: 'Penunjukan & Kontrak', nama: 'Bukti pembelian/pembayaran (nota/struk dari penyedia)', jenis: '', arsip: 'SPK', dasar: bk.dasar, ket: 'Dokumen dari penyedia — tidak memerlukan template. Kuitansi boleh dipakai sebagai gantinya.' });
+      if (bp || kw) add({ kode: 'KUITANSI', tahap: 'Penunjukan & Kontrak', nama: 'Kuitansi', jenis: 'KUITANSI', arsip: 'SPK', status: kw ? 'wajib' : 'opsional', dasar: bk.dasar, ket: 'Langkah: pemesanan → serah terima → penyerahan bukti → pembayaran (' + L + ' butir 5.3.3).' });
+      if (sp) add({ kode: 'SPK', tahap: 'Penunjukan & Kontrak', nama: 'Surat Perintah Kerja (SPK) — memuat ' + (jenis === 'BARANG' ? 'Surat Perintah Pengiriman' : 'SPMK'), jenis: 'SPK', cari: jenis === 'BARANG' ? 'barang' : jenis === 'KONSULTANSI' ? 'waktu penugasan|lumsum' : 'lumsum|harga satuan', arsip: 'SPK', dasar: bk.dasar + '; ' + L + ' butir 2.3.4 & 6.5', ket: 'Ditandatangani paling lambat 14 hari kerja setelah surat penunjukan, bermeterai.' });
+      if (pj) {
+        add({ kode: 'PERJANJIAN', tahap: 'Penunjukan & Kontrak', nama: 'Surat Perjanjian', jenis: 'PERJANJIAN', arsip: 'SPK', dasar: bk.dasar + '; ' + L + ' butir 2.3.4 & 6.3', ket: 'Satu kesatuan dengan SSUK, SSKK, dan dokumen kontrak lain; dua rangkap bermeterai.' });
+        add({ kode: 'SPMK', tahap: 'Penunjukan & Kontrak', nama: jenis === 'BARANG' ? 'Surat Perintah Pengiriman' : 'Surat Perintah Mulai Kerja (SPMK)', jenis: '', arsip: 'SPMK', dasar: L + ' butir 6.5', ket: (jenis === 'BARANG' ? 'Paling lambat 14 hari kalender setelah kontrak; penyedia menandatangani ≤ 7 hari kalender.' : 'Paling lambat 14 hari kalender setelah kontrak/penyerahan lokasi.') + ' Template terpisah belum tersedia — bagian ini ada di template SPK.' });
+      }
+      if (jenis === 'KONSTRUKSI' && (sp || pj)) add({ kode: 'BA_LOKASI', tahap: 'Pelaksanaan', nama: 'BA Peninjauan & Serah Terima Lokasi Kerja', jenis: 'BA_LOKASI', arsip: 'LAINNYA', dasar: L + ' butir 6.4', ket: 'Lokasi yang tidak dapat diserahkan dapat menjadi peristiwa kompensasi.' });
+      if (!bp) add({ kode: 'BAST', tahap: 'Serah Terima', nama: 'BA Serah Terima Hasil Pekerjaan (BAST)', jenis: 'BAST', cari: 'pekerjaan', arsip: 'BAST', status: kw ? 'disarankan' : 'wajib', dasar: L + ' butir 7.1', ket: 'Pembayaran 95% dengan retensi 5%, atau 100% dengan jaminan pemeliharaan 5% (bila ada masa pemeliharaan).' });
+      const pel = p && p.Pemeliharaan && p.Pemeliharaan !== '-';
+      if ((jenis === 'KONSTRUKSI' && (sp || pj)) || (pel && (sp || pj))) add({ kode: 'BAST_AKHIR', tahap: 'Serah Terima', nama: 'BA Serah Terima Akhir (setelah masa pemeliharaan)', jenis: 'BAST_AKHIR', arsip: 'BAST', status: jenis === 'KONSTRUKSI' ? 'wajib' : 'disarankan', dasar: L + ' butir 7.2', ket: 'Jaminan pemeliharaan/retensi dikembalikan paling lambat 14 hari kerja setelahnya.' });
+    }
+    return out;
   },
   cekDasarHtml(teks, tgl) { const w = this.cekDasar(teks, tgl); return w.length ? `<div class="note warn mt-s" data-cekdasar>${ic('warn', 'sm')}<div>${w.map(esc).join('<br>')}</div></div>` : ''; }
 };

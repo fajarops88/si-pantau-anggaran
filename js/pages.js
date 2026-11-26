@@ -418,9 +418,11 @@ Pages.detailKontrak = function (id) {
       <dl class="kv"><dt>Penyedia</dt><dd>${esc(k.Penyedia)}</dd><dt>Penandatangan</dt><dd>${esc(k.Direktur || '-')} (${esc(k.Jabatan_Direktur || '-')})</dd><dt>NPWP</dt><dd>${esc(k.NPWP || '-')}</dd><dt>Rekening</dt><dd>${esc([k.Nama_Bank, k.No_Rekening, k.Nama_Rekening].filter(Boolean).join(' · ') || '-')}</dd><dt>PIC</dt><dd>${esc(Store.nama(sk.PIC_Email))}</dd></dl></div>
       ${Aturan.kontrakHtml(k.Nilai_Kontrak, ((k.ID_Paket && Store.get('pengadaan', k.ID_Paket)) || {}).Jenis_Pengadaan, k.Metode).replace('class="note info"', 'class="note info mt"')}
       <div class="lbl mt mb-s">Pembayaran tercatat · ${rp(Calc.bayarKontrak(k))}</div>${pays.length ? `<table class="t light"><thead><tr><th>Bulan</th><th>SP2D</th><th class="n">Nilai</th><th>Status</th></tr></thead><tbody>${pays.map((r) => `<tr><td>${K.BULAN[r.Bulan - 1]}</td><td class="mono">${esc(r.No_SP2D || '-')}</td><td class="n">${fmtN(r.Realisasi_Keuangan)}</td><td>${stChip(K.ST_REAL, r.Status)}</td></tr>`).join('')}</tbody></table>` : '<p class="mini">Belum ada realisasi yang dikaitkan ke kontrak ini.</p>'}
-      <div class="lbl mt mb-s">Dokumen (${docs.length})</div><p class="mini" style="margin:0">${docs.map((d) => esc(jenisNama(d.Jenis_Dokumen))).join(' · ') || 'Belum ada dokumen.'}</p>`,
+      <div class="lbl mt mb-s">Dokumen (${docs.length})</div><p class="mini" style="margin:0">${docs.map((d) => esc(jenisNama(d.Jenis_Dokumen))).join(' · ') || 'Belum ada dokumen.'}</p>
+      <details class="mt" data-saran-kontrak><summary class="lbl" style="cursor:pointer">Dokumen disarankan untuk kontrak ini</summary><div class="mt-s">${Saran.html(k.ID_Paket ? Store.get('pengadaan', k.ID_Paket) : null, k, true)}</div></details>`,
     foot: `<a class="btn" href="#/arsip?k=${esc(id)}" data-x>${ic('arsip', 'sm')}Arsip</a><a class="btn" href="#/checklist?k=${esc(id)}" data-x>${ic('checklist', 'sm')}Checklist</a>${Can.generate() ? `<button class="btn" data-gen>${ic('docadd', 'sm')}Buat Dokumen</button>` : ''}${Can.editKontrak(sk) ? `<button class="btn pri" data-ed>${ic('edit', 'sm')}Ubah</button>` : ''}` });
   const g = m.el.querySelector('[data-gen]'); if (g) g.onclick = () => { m.close(); Gen.open({ ID_Kontrak: id }); };
+  Saran.bind(m.el, (k.ID_Paket && Store.get('pengadaan', k.ID_Paket)) || {}, k, () => m.close());
   const e = m.el.querySelector('[data-ed]'); if (e) e.onclick = () => { m.close(); Pages.formKontrak(k); };
 };
 
@@ -868,7 +870,7 @@ const Monev = {
    ===================================================================== */
 const Gen = {
   PAKET: ['INSTRUKSI', 'HPS', 'SPESIFIKASI'],
-  JENIS: { SPK: 'SPK / Kontrak', SURAT_PESANAN: 'Surat Pesanan', BAPP: 'BAPP (Penyelesaian Pekerjaan)', BAST: 'BAST', LAPORAN: 'Laporan', INSTRUKSI: 'Instruksi PPK', HPS: 'HPS', SPESIFIKASI: 'Spesifikasi Teknis', LAINNYA: 'Lainnya' },
+  JENIS: { SPK: 'SPK / Kontrak', PERJANJIAN: 'Surat Perjanjian', PENUNJUKAN: 'Surat Penunjukan Penyedia', KUITANSI: 'Kuitansi', SURAT_PESANAN: 'Surat Pesanan', BA_LOKASI: 'BA Serah Terima Lokasi', BAPP: 'BAPP (Penyelesaian Pekerjaan)', BAST: 'BAST', BAST_AKHIR: 'BAST Akhir (Pemeliharaan)', LAPORAN: 'Laporan', INSTRUKSI: 'Instruksi PPK', HPS: 'HPS', SPESIFIKASI: 'Spesifikasi Teknis', LAINNYA: 'Lainnya' },
   /** Jenis yang isiannya diambil dari kontrak e-Katalog (Surat Pesanan → BAPP per termin → BAST) */
   EKAT: ['SURAT_PESANAN', 'BAPP', 'BAST'],
   skema(t) { try { return JSON.parse(t.Skema || '[]'); } catch (e) { return []; } },
@@ -986,7 +988,7 @@ const Gen = {
     const barisBlok = (cols, r) => `<tr>${cols.map((c) => { const val = r[c.kunci] != null ? r[c.kunci] : ''; return area(c.kunci) ? `<td><textarea class="in" rows="2" data-k="${esc(c.kunci)}" style="min-width:200px">${esc(val)}</textarea></td>` : `<td><input class="in" data-k="${esc(c.kunci)}" value="${esc(val)}"></td>`; }).join('')}<td><button type="button" class="btn ghost icon" data-hapus title="Hapus baris">${ic('close', 'sm')}</button></td></tr>`;
     const draw = (tpl) => {
       const sk = this.skema(tpl), pre = this.prefill(Object.assign({}, ctx, { jenis: tpl.Jenis })), ekat = this.EKAT.indexOf(tpl.Jenis) > -1;
-      if ((tpl.Jenis === 'SPK' || tpl.Jenis === 'SURAT_PESANAN') && pre.NOMOR_SPK) pre.NOMOR = pre.NOMOR_SPK;
+      if ((tpl.Jenis === 'SPK' || tpl.Jenis === 'SURAT_PESANAN' || tpl.Jenis === 'PERJANJIAN') && pre.NOMOR_SPK) pre.NOMOR = pre.NOMOR_SPK;
       if (tpl.Jenis === 'INSTRUKSI' && pre.NOMOR_INSTRUKSI) pre.NOMOR = pre.NOMOR_INSTRUKSI;
       const nonBlok = sk.filter((x) => !x.blok), blok = sk.filter((x) => x.blok);
       const c2 = paketMode ? `<div class="f s4"><label>Paket pengadaan (isi otomatis)</label>${selectHtml('ctxPk', paketOpts, ctx.ID_Paket)}</div>` : `<div class="f s4"><label>Kontrak (isi otomatis)</label>${selectHtml('ctxK', kontrakOpts, ctx.ID_Kontrak || '')}</div>`;
@@ -1021,6 +1023,81 @@ const Gen = {
       mutate('dokumen.generate', { ID_Template: cur.ID_Template, ID_Kontrak: (c.k && ctx.ID_Kontrak) || '', ID_Paket: ctx.ID_Paket || '', ID_SubKeg: (c.sk && c.sk.ID_SubKeg) || ctx.ID_SubKeg || '', Tahun: S.tahun, Nomor, isian, blok }, { table: 'dokumen', btn: e.target, okMsg: 'Dokumen dibuat.',
         onOk: (d) => { m.close(); const row = d.row || {}; const xl = this.isSheets(row) || this.isSheets(cur); const mm = modal({ title: 'Dokumen siap', icon: 'check', size: 'sm', body: `<p style="margin:0">Draf <b>${esc(cur.Nama)}</b> sudah dibuat. ${this.EKAT.indexOf(cur.Jenis) > -1 ? 'Ini draf internal: unggah dokumen sah yang diterbitkan sistem Katalog Elektronik ke Arsip Dokumen.' : 'Cetak, tandatangani basah, lalu unggah scan-nya ke Arsip Dokumen' + (ctx.ID_Paket ? ' (tab Arsip paket)' : '') + '.'}</p>`, foot: `<button class="btn" data-x>Tutup</button>${xl ? `<button class="btn" data-f="xlsx">${ic('excel', 'sm')}Unduh XLSX</button>` : row.File_Docs ? `<button class="btn" data-f="docx">${ic('doc', 'sm')}Unduh DOCX</button>` : ''}${row.File_Pdf ? `<button class="btn pri" data-f="pdf">${ic('pdf', 'sm')}Buka PDF</button>` : ''}` }); mm.el.addEventListener('click', (ev) => { const f = ev.target.closest('[data-f]'); if (f) Gen.unduh(row.ID, f.dataset.f); }); } });
     };
+  }
+};
+
+/* =====================================================================
+   v1.2.4 — DOKUMEN DISARANKAN per metode/jenis/nilai + TEMPLATE BAWAAN
+   ===================================================================== */
+const Saran = {
+  /** Katalog template bawaan (berkas di frontend/templates/, dipasang lewat template.simpan) */
+  BAWAAN: [
+    ['Template_Instruksi_PPK.docx', 'INSTRUKSI', 'Instruksi PPK'],
+    ['Template_HPS.xlsx', 'HPS', 'HPS / Referensi Harga'],
+    ['Template_Spesifikasi_Teknis.docx', 'SPESIFIKASI', 'Spesifikasi Teknis'],
+    ['Template_Surat_Penunjukan_Penyedia.docx', 'PENUNJUKAN', 'Surat Penunjukan Penyedia (SPPBJ)'],
+    ['Template_Kuitansi.docx', 'KUITANSI', 'Kuitansi'],
+    ['Template_SPK_Barang.docx', 'SPK', 'SPK Barang + Surat Perintah Pengiriman'],
+    ['Template_SPK_Lumsum.docx', 'SPK', 'SPK Lumsum + SPMK'],
+    ['Template_SPK_Harga_Satuan.docx', 'SPK', 'SPK Harga Satuan + SPMK'],
+    ['Template_SPK_Waktu_Penugasan.docx', 'SPK', 'SPK Waktu Penugasan (Konsultansi) + SPMK'],
+    ['Template_Surat_Perjanjian.docx', 'PERJANJIAN', 'Surat Perjanjian'],
+    ['Template_BA_Serah_Terima_Lokasi.docx', 'BA_LOKASI', 'BA Serah Terima Lokasi Kerja'],
+    ['Template_BAST_Pekerjaan.docx', 'BAST', 'BAST Hasil Pekerjaan'],
+    ['Template_BAST_Akhir.docx', 'BAST_AKHIR', 'BAST Akhir (Pemeliharaan)'],
+    ['Template_Surat_Pesanan_eKatalog.docx', 'SURAT_PESANAN', 'Surat Pesanan e-Katalog'],
+    ['Template_BAPP_eKatalog.docx', 'BAPP', 'BAPP e-Katalog'],
+    ['Template_BAST_eKatalog.docx', 'BAST', 'BAST e-Katalog'],
+    ['Template_Laporan_Triwulanan.docx', 'LAPORAN', 'Laporan Triwulanan']
+  ],
+  TAHAP: ['Persiapan (PPK)', 'Penunjukan & Kontrak', 'Pelaksanaan', 'Serah Terima'],
+  ST: { wajib: ['Wajib', 'err'], disarankan: ['Disarankan', 'warn'], opsional: ['Opsional', 'slate'], internal: ['Internal dinas', 'info'] },
+  terpasang(nama) { return S.t.template.some((t) => t.Nama === nama && t.Aktif !== 'TIDAK'); },
+  /** Template yang cocok: jenis sama; bila ada pola, utamakan nama yang cocok (kata dipisah |) */
+  tpl(it) {
+    const tps = S.t.template.filter((t) => t.Aktif !== 'TIDAK' && t.Jenis === it.jenis); if (!tps.length) return null;
+    if (it.cari) { const pola = it.cari.split('|'); for (const w of pola) { const x = tps.find((t) => new RegExp(w, 'i').test(t.Nama)); if (x) return x; }
+      if (it.jenis === 'BAST') return tps.find((t) => !/katalog/i.test(t.Nama) === (it.cari !== 'katalog')) || null; }
+    return tps[0];
+  },
+  /** Draf yang sudah dibuat & scan yang sudah diunggah untuk butir ini */
+  bukti(it, p, k) {
+    const milik = (x) => (k && x.ID_Kontrak === k.ID_Kontrak) || (p && x.ID_Paket === p.ID_Paket);
+    const draf = it.jenis ? S.t.dokumen.filter((d) => milik(d) && d.Jenis === it.jenis && !d._pending && (it.jenis !== 'BAST' || !it.cari || (/katalog/i.test((Store.get('template', d.ID_Template) || {}).Nama || '') === (it.cari === 'katalog')))) : [];
+    const scan = S.t.arsip.filter((a) => milik(a) && a.Jenis_Dokumen === it.arsip);
+    return { draf, scan };
+  },
+  html(p, k, kecil) {
+    const r = Aturan.dokumen(p, k); let no = 0;
+    const head = `<div class="note info mb">${ic('info', 'sm')}<div><b>Petunjuk</b> dokumen menurut metode <b>${esc(r.metode || '—')}</b>${r.jenis ? ', jenis <b>' + esc(PK.JENIS[r.jenis] || r.jenis) + '</b>' : ''}, nilai <b>${rp(r.nilai)}</b>${r.perkiraan ? ' (perkiraan dari HPS/pagu — kontrak belum dibuat)' : ''}${r.bentuk ? '. Bentuk kontrak: <b>' + esc(r.bentuk.bentuk) + '</b>' : ''}. Disusun dari Perpres 16/2018 s.t.d.t.d. Perpres 46/2025, PerLKPP 2/2026, dan PerLKPP 3/2026; bukan pengganti ketentuan — periksa kembali dengan PBJ/bagian hukum.</div></div>`
+      + r.catatan.map((c) => `<div class="note warn mb-s">${ic('warn', 'sm')}<div>${esc(c)}</div></div>`).join('');
+    if (!r.daftar.length) return head;
+    const baris = (it) => { no++; const t = it.jenis ? this.tpl(it) : null, b = this.bukti(it, p, k), st = this.ST[it.status] || this.ST.wajib, butuhK = it.perluKontrak && !k;
+      const ok = b.scan.length ? chip('scan ' + b.scan.length, 'ok') : b.draf.length ? chip('draf ' + b.draf.length, 'info') : '';
+      const aksi = !it.jenis ? '<span class="mini">tanpa template</span>' : butuhK ? '<span class="mini">buat kontrak dulu</span>' : t ? (Can.generate() ? `<button class="btn sm pri" data-saran="${esc(it.jenis)}" data-tpl="${esc(t.ID_Template)}" data-ctx="${it.perluKontrak ? 'k' : 'p'}">${ic('docadd', 'sm')}Buat</button>` : '') : `<span class="mini c-warn">template belum ada</span>${Can.admin() ? ` <a class="btn sm" href="#/pengaturan?tab=template" data-x>${ic('upload', 'sm')}Pasang</a>` : ''}`;
+      return `<tr data-saran-kode="${esc(it.kode)}"><td class="c">${b.scan.length ? ic('check', 'sm') : no}</td><td><b>${esc(it.nama)}</b> ${chip(st[0], st[1])} ${ok}${kecil ? '' : `<span class="sub">${esc(it.dasar)}</span>${it.ket ? `<span class="sub">${esc(it.ket)}</span>` : ''}`}${t && !kecil ? `<span class="sub">Template: ${esc(t.Nama)}</span>` : ''}</td><td class="acts" style="white-space:nowrap">${aksi}</td></tr>`; };
+    return head + this.TAHAP.map((th) => { const xs = r.daftar.filter((x) => x.tahap === th); return xs.length ? `<div class="lbl mt mb-s">${esc(th)}</div><div class="tw"><table class="t light" data-saran-tabel><tbody>${xs.map(baris).join('')}</tbody></table></div>` : ''; }).join('');
+  },
+  /** Pasang handler klik tombol Buat pada elemen kontainer */
+  bind(el, p, k, sebelum) {
+    el.addEventListener('click', (e) => { const t = e.target.closest('[data-saran]'); if (!t) return; e.preventDefault(); if (sebelum) sebelum();
+      const ctx = t.dataset.ctx === 'k' && k ? { ID_Kontrak: k.ID_Kontrak } : { ID_Paket: p.ID_Paket };
+      Gen.open(Object.assign(ctx, { jenis: t.dataset.saran, ID_Template: t.dataset.tpl })); });
+  },
+  /** Pasang template bawaan yang belum ada (urut, satu per satu) */
+  async pasang(daftar, btn, onStep) {
+    let ok = 0, gagal = 0;
+    for (const [file, jenis, nama] of daftar) {
+      if (this.terpasang(nama)) continue;
+      try {
+        const res = await fetch('./templates/' + file + '?v=' + APP_VERSION); if (!res.ok) throw new Error('HTTP ' + res.status);
+        const b64 = await fileToB64(await res.blob());
+        const r = await mutate('template.simpan', { Nama: nama, Jenis: jenis, base64File: b64, namaFile: file, mime: /\.xlsx$/.test(file) ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }, { table: 'template', btn, okMsg: false });
+        r.success ? ok++ : gagal++;
+      } catch (e) { gagal++; toast('Gagal memasang ' + nama + ': ' + e.message, 'err'); }
+      if (onStep) onStep();
+    }
+    toast(ok + ' template dipasang' + (gagal ? ', ' + gagal + ' gagal' : '') + '.', gagal ? 'warn' : 'ok');
   }
 };
 
@@ -1120,7 +1197,9 @@ Pages.add({
   },
   template(b) {
     const tps = S.t.template, JN = Gen.JENIS;
-    b.innerHTML = `<div class="note warn mb">${ic('warn', 'sm')}<div>Template berisi placeholder seperti <code>{{NOMOR}}</code>, <code>{{NILAI_HPS|rupiah}}</code>, atau baris tabel berulang <code>{{#ITEM}}</code> … <code>{{ITEM.URAIAN}}</code>. Format yang diterima: <b>Word (.docx)</b> → Google Docs, <b>Excel (.xlsx)</b> → Google Sheets (hasil cetak Excel + PDF), dan <b>PDF</b> → Google Docs lewat OCR (tata letak bisa bergeser — periksa hasilnya). Bisa juga menempel tautan Google Docs/Sheets.</div></div>
+    const bw = Saran.BAWAAN, belum = bw.filter((x) => !Saran.terpasang(x[2]));
+    const kartuBawaan = `<div class="card mb" id="tpBawaan"><div class="card-h"><h3>${ic('docadd', 'sm')}Template bawaan (${bw.length - belum.length}/${bw.length} terpasang)</h3><p>Disusun mengikuti struktur PerLKPP 3/2026 dan PerLKPP 2/2026, memakai isian otomatis aplikasi. Draf — review bagian hukum/PBJ sebelum dipakai resmi.</p></div><div class="card-b"><div class="tw mb-s"><table class="t light"><tbody>${bw.map((x) => `<tr><td><b>${esc(x[2])}</b><span class="sub mono">${esc(x[0])}</span></td><td>${chip(JN[x[1]] || x[1], 'slate')}</td><td class="acts">${Saran.terpasang(x[2]) ? chip('terpasang', 'ok') : `<button class="btn sm" data-pasang="${esc(x[0])}">${ic('download', 'sm')}Pasang</button>`}</td></tr>`).join('')}</tbody></table></div>${belum.length ? `<button class="btn pri" data-pasang-semua>${ic('download', 'sm')}Pasang ${belum.length} template yang belum ada</button> <span class="mini">Satu per satu (±5–10 detik per template); memerlukan layanan lanjutan Drive API.</span>` : '<span class="mini">Semua template bawaan sudah terpasang. Untuk mengganti isi, gunakan Perbarui pada daftar di bawah.</span>'}</div></div>`;
+    b.innerHTML = kartuBawaan + `<div class="note warn mb">${ic('warn', 'sm')}<div>Template berisi placeholder seperti <code>{{NOMOR}}</code>, <code>{{NILAI_HPS|rupiah}}</code>, atau baris tabel berulang <code>{{#ITEM}}</code> … <code>{{ITEM.URAIAN}}</code>. Format yang diterima: <b>Word (.docx)</b> → Google Docs, <b>Excel (.xlsx)</b> → Google Sheets (hasil cetak Excel + PDF), dan <b>PDF</b> → Google Docs lewat OCR (tata letak bisa bergeser — periksa hasilnya). Bisa juga menempel tautan Google Docs/Sheets.</div></div>
       ${tps.length ? `<div class="tw mb"><table class="t light"><thead><tr><th>Nama</th><th>Jenis</th><th>Format</th><th>Isian</th><th>Versi</th><th>Diperbarui</th><th></th></tr></thead><tbody>${tps.map((t) => `<tr><td><b>${esc(t.Nama)}</b></td><td>${chip(JN[t.Jenis] || t.Jenis, Gen.PAKET.indexOf(t.Jenis) > -1 ? 'gold' : 'slate')}</td><td>${Gen.isSheets(t) ? ic('excel', 'sm') + ' Excel' : ic('doc', 'sm') + ' Word'}</td><td class="mini" style="max-width:360px">${Gen.skema(t).map((x) => esc(x.kunci)).join(', ')}</td><td>v${esc(t.Versi || 1)}</td><td>${tgl(String(t.Diperbarui).slice(0, 10))}</td><td class="acts"><button class="btn sm" data-ganti="${esc(t.ID_Template)}">${ic('upload', 'sm')}Perbarui</button><button class="btn ghost icon" data-hapus="${esc(t.ID_Template)}">${ic('trash', 'sm')}</button></td></tr>`).join('')}</tbody></table></div>` : ''}
       <div class="card"><div class="card-h"><h3>${ic('upload', 'sm')}Unggah / perbarui template</h3></div><div class="card-b"><form class="fg" id="fTp">${fld({ name: 'Nama', label: 'Nama template', span: 's6', req: true, ph: 'Template HPS Pengadaan' })}${fld({ name: 'Jenis', label: 'Jenis', type: 'select', span: 's3', opts: Object.keys(JN).map((k) => [k, JN[k]]) })}<input type="hidden" name="ID_Template">${fld({ name: 'url', label: 'Atau tautan Google Docs/Sheets', span: 's3', ph: 'https://docs.google.com/…' })}</form>
         <div class="drop mt" id="dropT">${ic('doc')}<b>Tarik file Word, Excel, atau PDF ke sini, atau klik untuk memilih</b><span class="mini">.docx · .xlsx · .pdf — mis. Template_SPK_Kontrak.docx, Template_HPS.xlsx, Template_Instruksi_PPK.docx</span><div class="prog hidden"><i></i></div></div><input type="file" id="fileT" class="hidden" accept=".docx,.xlsx,.pdf">
@@ -1132,11 +1211,13 @@ Pages.add({
       const fl = files[0], ext = (fl.name.match(/\.(docx|xlsx|pdf)$/i) || [])[1]; if (!ext) { toast('Hanya file .docx, .xlsx, atau .pdf.', 'warn'); return; }
       if (fl.size > 10 * 1048576) { toast('Berkas template maksimal 10 MB.', 'warn'); return; }
       if (!f.Nama.value) f.Nama.value = fl.name.replace(/\.(docx|xlsx|pdf)$/i, '').replace(/_/g, ' ');
-      if (!f.ID_Template.value) { const n = fl.name; f.Jenis.value = /instruksi/i.test(n) ? 'INSTRUKSI' : /hps|harga.?perkiraan/i.test(n) ? 'HPS' : /spesifikasi|spek/i.test(n) ? 'SPESIFIKASI' : /bapp|penyelesaian/i.test(n) ? 'BAPP' : /bast|serah.?terima/i.test(n) ? 'BAST' : /surat.?pesanan/i.test(n) ? 'SURAT_PESANAN' : /lapor/i.test(n) ? 'LAPORAN' : /spk|kontrak/i.test(n) ? 'SPK' : f.Jenis.value; }
+      if (!f.ID_Template.value) { const n = fl.name; f.Jenis.value = /penunjukan/i.test(n) ? 'PENUNJUKAN' : /perjanjian/i.test(n) ? 'PERJANJIAN' : /kuitansi|kwitansi/i.test(n) ? 'KUITANSI' : /lokasi/i.test(n) ? 'BA_LOKASI' : /bast.?akhir|serah.?terima.?akhir/i.test(n) ? 'BAST_AKHIR' : /instruksi/i.test(n) ? 'INSTRUKSI' : /hps|harga.?perkiraan/i.test(n) ? 'HPS' : /spesifikasi|spek/i.test(n) ? 'SPESIFIKASI' : /bapp|penyelesaian/i.test(n) ? 'BAPP' : /bast|serah.?terima/i.test(n) ? 'BAST' : /surat.?pesanan/i.test(n) ? 'SURAT_PESANAN' : /lapor/i.test(n) ? 'LAPORAN' : /spk|kontrak/i.test(n) ? 'SPK' : f.Jenis.value; }
       const bar_ = $('#dropT .prog'); bar_.classList.remove('hidden'); bar_.firstChild.style.width = '40%';
       await kirim({ base64File: await fileToB64(fl), namaFile: fl.name, mime: MIME[ext.toLowerCase()] }); bar_.classList.add('hidden');
     });
     b.onclick = async (e) => {
+      const pz = e.target.closest('[data-pasang],[data-pasang-semua]');
+      if (pz) { const pilih = pz.dataset.pasang ? bw.filter((x) => x[0] === pz.dataset.pasang) : bw; pz.disabled = true; await Saran.pasang(pilih, pz); App.refresh(); return; }
       const t = e.target.closest('[data-kirim],[data-ganti],[data-hapus]'); if (!t) return;
       if (t.dataset.kirim != null) { if (!/docs\.google\.com\/(document|spreadsheets)|drive\.google\.com/.test(f.url.value)) { toast('Tempel tautan Google Docs/Sheets yang valid, atau unggah berkas Word/Excel/PDF.', 'warn'); return; } kirim({ url: f.url.value }, t); }
       if (t.dataset.ganti) { const tp = Store.get('template', t.dataset.ganti); f.ID_Template.value = tp.ID_Template; f.Nama.value = tp.Nama; f.Jenis.value = tp.Jenis; toast('Unggah berkas baru atau tempel tautan untuk memperbarui "' + tp.Nama + '".', 'info'); f.Nama.focus(); }

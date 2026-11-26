@@ -65,7 +65,7 @@ Pages.add({
       ph({ eyebrow: (PK.JENIS[p.Jenis_Pengadaan] || 'Pengadaan') + ' · ' + (p.Metode || 'metode belum diisi'), eyebrowIc: 'gavel', title: p.Nama_Paket, desc: `${esc(skLabel(sk))}${p.Kode_Rekening ? ` · Rek. <span class="mono">${esc(p.Kode_Rekening)}</span>` : ''} · Pagu paket <b>${rp(p.Pagu_Paket)}</b> · ${hg.singkat} <b>${rp(p.Nilai_HPS)}</b>`,
         acts: `${stChip(PK.ST, p.Status)}${bisa ? `<button class="btn" data-act="edit">${ic('edit', 'sm')}Ubah paket</button>` : ''}${k ? `<a class="btn" href="#/kontrak">${ic('link', 'sm')}${esc(k.No_SPK)}</a>` : (bisa ? `<button class="btn gold" data-act="kontrak">${ic('kontrak', 'sm')}Buat Kontrak</button>` : '')}` }) +
       (num(p.Nilai_HPS) > num(p.Pagu_Paket) ? `<div class="note err mb">${ic('warn', 'sm')}<div>Nilai ${hg.singkat} (${rp(p.Nilai_HPS)}) melebihi pagu paket (${rp(p.Pagu_Paket)}). Tinjau kembali harga atau volume.</div></div>` : '') +
-      `<div class="card"><div class="tabs">${[['instruksi', 'send', 'Instruksi PPK'], ['hps', 'receipt', hg.singkat], ['spek', 'doc', 'Spesifikasi Teknis'], ['arsip', 'arsip', 'Dokumen & Arsip']].map((t) => `<button data-tab="${t[0]}" class="${st.tab === t[0] ? 'on' : ''}">${ic(t[1], 'sm')}${t[2]}</button>`).join('')}</div><div class="card-b" id="pkBody"></div></div>`;
+      `<div class="card"><div class="tabs">${[['instruksi', 'send', 'Instruksi PPK'], ['hps', 'receipt', hg.singkat], ['spek', 'doc', 'Spesifikasi Teknis'], ['saran', 'checklist', 'Dokumen Disarankan'], ['arsip', 'arsip', 'Dokumen & Arsip']].map((t) => `<button data-tab="${t[0]}" class="${st.tab === t[0] ? 'on' : ''}">${ic(t[1], 'sm')}${t[2]}</button>`).join('')}</div><div class="card-b" id="pkBody"></div></div>`;
     const b = $('#pkBody');
     this['tab_' + st.tab](b, p, st, bisa);
     el.onclick = (e) => {
@@ -202,6 +202,12 @@ Pages.add({
   },
   bersih(x) { return { Uraian: String(x.Uraian || '').trim(), Spesifikasi: String(x.Spesifikasi || '').trim(), Volume: num(x.Volume), Satuan: String(x.Satuan || '').trim(), Harga_Satuan: num(x.Harga_Satuan), Sumber_Harga: String(x.Sumber_Harga || '').trim(), Keterangan: String(x.Keterangan || '').trim() }; },
   dirty(p, st) { return !!st.items && JSON.stringify(st.items.map(this.bersih)) !== JSON.stringify(PK.items(p.ID_Paket).map(this.bersih)); },
+  /** v1.2.4: daftar dokumen yang disarankan menurut metode, jenis, dan nilai paket/kontrak */
+  tab_saran(b, p) {
+    const k = p.ID_Kontrak ? Store.get('kontrak', p.ID_Kontrak) : null;
+    b.innerHTML = Saran.html(p, k) + `<p class="mini mt">Status: ${chip('draf', 'info')} sudah dibuat di aplikasi · ${chip('scan', 'ok')} scan bertanda tangan sudah diunggah ke arsip (jenis dokumen yang sesuai).</p>`;
+    b.onclick = null; Saran.bind(b, p, k);
+  },
   tab_arsip(b, p, st, bisa) {
     const docs = PK.docs(p.ID_Paket).sort((a, c) => String(c.Tgl_Upload).localeCompare(String(a.Tgl_Upload)));
     b.innerHTML = `<div class="grid g-64"><div><div class="lbl mb-s">Scan dokumen bertanda tangan (${docs.length})</div>${docs.length ? `<div class="docs">${docs.map((d) => { const di = docIcon(d); return `<div class="doc"><div class="di ${di[1]}">${ic(di[0])}</div><div style="min-width:0;flex:1"><b>${esc(d.Nama_File)}</b><small>${esc(jenisNama(d.Jenis_Dokumen))} · ${fmtN(num(d.Ukuran) / 1048576, 2)} MB</small><small>${tgl(String(d.Tgl_Upload).slice(0, 10))} · ${esc(Store.nama(d.Oleh))}</small><div class="acts"><button class="btn sm" data-open="${esc(d.ID_Dokumen)}">${ic('eye', 'sm')}Lihat</button>${Can.hapusArsip() ? `<button class="btn sm ghost icon" data-hapus="${esc(d.ID_Dokumen)}" title="Hapus">${ic('trash', 'sm')}</button>` : ''}</div></div></div>`; }).join('')}</div>` : '<p class="mini">Belum ada scan. Cetak instruksi/HPS/spesifikasi, tandatangani basah, lalu unggah di sini.</p>'}
