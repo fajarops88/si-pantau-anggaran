@@ -1128,13 +1128,14 @@ Pages.add({
         const node = (u, d) => `<div style="padding:8px 0 8px ${d * 26}px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:center">${d ? ic('subdir', 'sm c-mut') : ''}<div class="av ${u.Role === 'PEJABAT' ? 'gold' : 'soft'}" style="width:28px;height:28px;font-size:11px">${initials(u.Nama)}</div><div><b>${esc(u.Nama)}</b> <span class="mini">${esc(u.Jabatan || '')}</span> ${roleChip(u.Role)}</div></div>` + all.filter((x) => norm(x.Atasan_Email) === norm(u.Email)).sort(byKey('Nama')).map((x) => node(x, d + 1)).join('');
         $('#tbl').innerHTML = `<div class="card-h"><h3>${ic('tree', 'sm')}Struktur penilaian berjenjang</h3></div><div class="card-b">${roots.map((u) => node(u, 0)).join('') || emptyBox('Belum ada pengguna', '')}</div>`; return;
       }
-      $('#tbl').innerHTML = rows.length ? `<div class="card-h"><h3>${ic('tree', 'sm')}Daftar pengguna & matriks penilaian</h3></div><div class="tw"><table class="t"><thead><tr><th>Pegawai & NIP</th><th>Email</th><th>Peran</th><th>Jabatan / Bidang</th><th>Atasan langsung (penilai)</th><th class="c">Status</th><th></th></tr></thead><tbody>${rows.map((u) => `<tr class="${u.Aktif === 'TIDAK' ? 'c-mut' : ''}"><td><div class="row" style="flex-wrap:nowrap"><div class="av ${u.Role === 'PEJABAT' ? 'gold' : 'soft'}">${initials(u.Nama)}</div><div><b>${esc(u.Nama)}</b><span class="sub mono">${esc(u.NIP || '-')}</span></div></div></td><td class="mono">${esc(u.Email)}</td><td>${roleChip(u.Role)}${pw && u.Wajib_Ganti_Sandi === 'YA' ? '<span class="sub c-warn">belum ganti sandi</span>' : ''}</td><td>${esc(u.Jabatan || '-')}<span class="sub">${esc(u.Bidang || 'Semua bidang')}</span></td><td>${u.Atasan_Email ? esc(Store.nama(u.Atasan_Email)) + `<span class="sub">${esc((Store.user(u.Atasan_Email) || {}).Jabatan || '')}</span>` : '<span class="mini">—</span>'}</td><td class="c">${u.Aktif === 'TIDAK' ? chip('Nonaktif', 'slate') : chip('Aktif', 'ok')}</td><td class="acts"><button class="btn ghost icon" data-edit="${esc(u.Email)}" title="Ubah">${ic('edit', 'sm')}</button>${pw ? `<button class="btn ghost icon" data-reset="${esc(u.Email)}" title="Reset kata sandi">${ic('key', 'sm')}</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : emptyBox('Tidak ada pengguna yang cocok', '');
+      $('#tbl').innerHTML = rows.length ? `<div class="card-h"><h3>${ic('tree', 'sm')}Daftar pengguna & matriks penilaian</h3></div><div class="tw"><table class="t"><thead><tr><th>Pegawai & NIP</th><th>Email</th><th>Peran</th><th>Jabatan / Bidang</th><th>Atasan langsung (penilai)</th><th class="c">Status</th><th></th></tr></thead><tbody>${rows.map((u) => `<tr class="${u.Aktif === 'TIDAK' ? 'c-mut' : ''}"><td><div class="row" style="flex-wrap:nowrap"><div class="av ${u.Role === 'PEJABAT' ? 'gold' : 'soft'}">${initials(u.Nama)}</div><div><b>${esc(u.Nama)}</b><span class="sub mono">${esc(u.NIP || '-')}</span></div></div></td><td class="mono">${esc(u.Email)}</td><td>${roleChip(u.Role)}${pw && u.Wajib_Ganti_Sandi === 'YA' ? '<span class="sub c-warn">belum ganti sandi</span>' : ''}</td><td>${esc(u.Jabatan || '-')}<span class="sub">${esc(u.Bidang || 'Semua bidang')}</span></td><td>${u.Atasan_Email ? esc(Store.nama(u.Atasan_Email)) + `<span class="sub">${esc((Store.user(u.Atasan_Email) || {}).Jabatan || '')}</span>` : '<span class="mini">—</span>'}</td><td class="c">${u.Aktif === 'TIDAK' ? chip('Nonaktif', 'slate') : chip('Aktif', 'ok')}</td><td class="acts" style="white-space:nowrap"><button class="btn ghost icon" data-edit="${esc(u.Email)}" title="Ubah">${ic('edit', 'sm')}</button>${pw ? `<button class="btn ghost icon" data-reset="${esc(u.Email)}" title="Reset kata sandi">${ic('key', 'sm')}</button>` : ''}${norm(u.Email) !== norm(S.me && S.me.email) ? `<button class="btn ghost icon" data-hapus="${esc(u.Email)}" title="Hapus pengguna">${ic('trash', 'sm')}</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : emptyBox('Tidak ada pengguna yang cocok', '');
     };
     draw();
     el.oninput = debounce((e) => { if (e.target.name === 'cari') { st.cari = e.target.value; draw(); } }, 120);
     el.onchange = (e) => { if (['role', 'bidang', 'akt'].indexOf(e.target.name) > -1) { st[e.target.name] = e.target.value; draw(); } };
     el.onclick = async (e) => {
-      const t = e.target.closest('[data-act],[data-edit],[data-reset],[data-v]'); if (!t) return;
+      const t = e.target.closest('[data-act],[data-edit],[data-reset],[data-hapus],[data-v]'); if (!t) return;
+      if (t.dataset.hapus) { Pages.hapusUser(Store.user(t.dataset.hapus)); return; }
       if (t.dataset.v) { st.view = t.dataset.v; App.refresh(); }
       if (t.dataset.act === 'add') Pages.formUser();
       if (t.dataset.act === 'import') Pages.importData('pengguna');
@@ -1160,7 +1161,8 @@ Pages.formUser = function (u, prefill) {
     ${fld({ name: 'Role', label: 'Peran sistem', type: 'select', value: u.Role, span: 's6', opts: Object.keys(K.ROLE).map((r) => [r, K.ROLE[r]]) })}${fld({ name: 'Bidang', label: 'Bidang (pembatas hak tulis)', type: 'select', value: u.Bidang, span: 's6', opts: [['', 'Semua bidang']].concat(Store.bidangList().map((b) => [b, b])) })}
     ${fld({ name: 'Atasan_Email', label: 'Atasan langsung (pejabat penilai)', type: 'select', value: u.Atasan_Email, span: 's8', opts: atasanOpts })}${fld({ name: 'Aktif', label: 'Status akun', type: 'select', value: u.Aktif, span: 's4', opts: [['YA', 'Aktif'], ['TIDAK', 'Nonaktif']] })}</form>
     <div class="note info mt">${ic('info', 'sm')}<div><b>Pejabat</b> menilai bawahan langsung & memverifikasi realisasi sub kegiatan yang PIC-nya dia. <b>Staf</b> menginput realisasi & arsip. <b>Bagian Program</b> mengelola DPA & memantau seluruh bidang.</div></div>`,
-    foot: `<button class="btn" data-x>Batal</button><button class="btn pri" data-save>${ic('save', 'sm')}Simpan</button>` });
+    foot: `${!baru && norm(u.Email) !== norm(S.me && S.me.email) ? `<button class="btn danger" data-del style="margin-right:auto">${ic('trash', 'sm')}Hapus</button>` : ''}<button class="btn" data-x>Batal</button><button class="btn pri" data-save>${ic('save', 'sm')}Simpan</button>` });
+  const del = m.el.querySelector('[data-del]'); if (del) del.onclick = () => Pages.hapusUser(u, m);
   m.el.querySelector('[data-save]').onclick = async (e) => {
     const v = validate(m.el, { Email: (x) => (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x) ? 'Email tidak valid.' : baru && Store.user(x) ? 'Email sudah terdaftar.' : ''), Nama: req('Nama'), NIP: (x) => (x && !/^\d{18}$/.test(x.replace(/\s/g, '')) ? 'NIP harus 18 digit angka.' : '') });
     if (!v) return; v.Email = v.Email.toLowerCase(); v.NIP = (v.NIP || '').replace(/\s/g, '');
@@ -1168,6 +1170,30 @@ Pages.formUser = function (u, prefill) {
     m.close();
     mutate('user.simpan', v, { table: 'pengguna', temp: v, okMsg: baru ? 'Pengguna ditambahkan.' : 'Pengguna diperbarui.', retry: () => Pages.formUser(baru ? null : u, v), onOk: (d) => { if (d.sandiAwal) Pages.tampilSandi(v, d.sandiAwal); } });
   };
+};
+
+/** v1.2.8: hapus pengguna (Admin). Pra-cek di perangkat memakai aturan yang sama dengan server (server tetap menentukan). */
+Pages.cegahHapusUser = function (u) {
+  const e = norm(u.Email), alasan = [], ringkas = (a) => (a.length <= 3 ? a.join(', ') : a.slice(0, 3).join(', ') + ' dan ' + (a.length - 3) + ' lainnya');
+  if (u.Role === 'ADMIN' && u.Aktif !== 'TIDAK' && !S.t.pengguna.some((x) => norm(x.Email) !== e && x.Role === 'ADMIN' && x.Aktif !== 'TIDAK')) alasan.push('Admin aktif terakhir');
+  const bw = S.t.pengguna.filter((x) => norm(x.Atasan_Email) === e);
+  if (bw.length) alasan.push('atasan langsung ' + bw.length + ' pengguna (' + ringkas(bw.map((x) => x.Nama || x.Email)) + ')');
+  const pic = S.t.subkeg.filter((s) => norm(s.PIC_Email) === e && num(s.Tahun) >= num(S.tahun));
+  if (pic.length) alasan.push('PIC ' + pic.length + ' Sub Kegiatan tahun ' + S.tahun + ' (' + ringkas(pic.map((s) => s.Nama_SubKegiatan || s.Kode_SubKeg)) + ')');
+  const pk = S.t.pengadaan.filter((p) => (norm(p.Email_PPK) === e || norm(p.Email_Pejabat_Pengadaan) === e) && ['SELESAI', 'BATAL'].indexOf(p.Status) < 0);
+  if (pk.length) alasan.push('PPK/Pejabat Pengadaan ' + pk.length + ' paket yang belum berkontrak (' + ringkas(pk.map((p) => p.Nama_Paket)) + ')');
+  return alasan;
+};
+Pages.hapusUser = async function (u, formModal) {
+  if (!u) return;
+  const alasan = Pages.cegahHapusUser(u);
+  if (alasan.length) {
+    modal({ title: 'Pengguna belum dapat dihapus', icon: 'warn', size: 'sm', body: `<p style="margin:0 0 10px"><b>${esc(u.Nama)}</b> masih menjadi:</p><ul data-alasan-hapus style="margin:0 0 12px;padding-left:20px">${alasan.map((a) => `<li>${esc(a)}</li>`).join('')}</ul><p class="mini" style="margin:0">Pindahkan tugas tersebut ke pegawai lain lebih dulu (Manajemen User, Perencanaan → PIC, atau Pengadaan → PPK/Pejabat Pengadaan), atau ubah status akunnya menjadi <b>Nonaktif</b>.</p>`, foot: '<button class="btn pri" data-x>Mengerti</button>' });
+    return;
+  }
+  if (!(await confirmBox(`Hapus pengguna <b>${esc(u.Nama)}</b> (${esc(u.Email)})?<br><br>Akun dihapus permanen dan semua sesinya dikeluarkan. Riwayat realisasi, evaluasi, dan log audit tetap menyimpan emailnya, tetapi namanya tidak lagi tampil.<br><br>Bila pegawai hanya pindah tugas sementara atau cuti, pilih <b>Nonaktif</b> saja.`, { danger: true, ok: 'Hapus' }))) return;
+  if (formModal) formModal.close();
+  mutate('user.hapus', { Email: u.Email }, { optimistic: () => { const o = Store.remove('pengguna', u.Email); return () => Store.upsert('pengguna', o); }, okMsg: u.Nama + ' dihapus.' });
 };
 
 /* =====================================================================
