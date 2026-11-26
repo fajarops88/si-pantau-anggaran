@@ -4,9 +4,10 @@
    router hash, kalkulasi realisasi, grafik SVG, ekspor, utilitas UI.
    ===================================================================== */
 'use strict';
-const APP_VERSION = '1.2.6';
+const APP_VERSION = '1.2.7';
 /** Riwayat versi frontend (terbaru di atas) — tampil di menu Profil → Riwayat Versi */
 const FE_RIWAYAT = [
+  { versi: '1.2.7', tanggal: '2026-11-26', catatan: ['Bila server sedang sibuk (kunci tulis dipakai proses lain), simpan/impor dicoba ulang otomatis hingga 2 kali (jeda 4 dan 8 detik). Unggah arsip, simpan template, buat dokumen, dan ganti/reset sandi tidak diulang otomatis.'] },
   { versi: '1.2.6', tanggal: '2026-11-26', catatan: ['Peringatan batas nilai Pengadaan Langsung (Barang/Jasa Lainnya ≤ Rp200 juta, Konstruksi ≤ Rp400 juta, Konsultansi ≤ Rp100 juta) di formulir paket, formulir & detail kontrak, dan Dokumen Disarankan; tidak memblokir simpan.', 'Pemeriksaan dasar hukum mengikuti aturan peralihan PerLKPP 3/2026 Pasal 10: PerLKPP 12/2021 tetap dipakai untuk pemilihan yang sudah berjalan atau kontrak yang sudah ditandatangani sebelum berlaku.', 'Template Kuitansi: kotak meterai Rp10.000 di tanda tangan penerima; Dokumen Disarankan mengingatkan meterai untuk kuitansi di atas Rp5 juta (UU 10/2020).', 'Template Instruksi PPK: lampiran HPS tanpa batas "28 hari kerja" yang tidak ada lagi dasarnya. Template BAST Akhir: tenggat 14 hari kerja hanya untuk pengembalian jaminan pemeliharaan, retensi dibayar sesuai Kontrak (PerLKPP 3/2026 butir 7.2).', 'Surat Penunjukan untuk Pengadaan Langsung: dasar butir 6.1–6.2 & 5.3.3, tanpa catatan perlu verifikasi.'] },
   { versi: '1.2.5', tanggal: '2026-11-26', catatan: ['Halaman Progres untuk Kepala Dinas dan Sekretaris tanpa login: angka ringkasan, serapan per bidang, jumlah paket menurut status per bidang, dan daftar paket yang dapat dibuka untuk melihat tahapan serta realisasi bulanan.', 'Admin mengatur status Ditampilkan/Disembunyikan, bidang, dan bagian di Pengaturan → Halaman Progres. Bila disembunyikan, halaman depan tetap halaman login.', 'Evaluasi triwulanan berjenjang sampai Kepala Bidang: Kepala Dinas dan Sekretaris tidak perlu login; pejabat yang atasannya tidak terdaftar atau nonaktif tidak lagi muncul sebagai belum dinilai.'] },
   { versi: '1.2.4', tanggal: '2026-11-26', catatan: ['Dokumen disarankan per metode, jenis, dan nilai: tab baru di Paket Pengadaan dan bagian di detail Kontrak, lengkap dengan dasar aturan (PerLKPP 3/2026, PerLKPP 2/2026, Perpres Pasal 28), status draf/scan, dan tombol Buat dokumen.', 'Template bawaan siap pasang (Pengaturan → Template Dokumen): Instruksi PPK, HPS, Spesifikasi, Surat Penunjukan, SPK Barang/Lumsum/Harga Satuan/Waktu Penugasan, Surat Perjanjian, Kuitansi, BA Serah Terima Lokasi, BAST Pekerjaan, BAST Akhir, dokumen e-Katalog, dan Laporan Triwulanan.', 'Jenis template baru: Surat Penunjukan Penyedia, Surat Perjanjian, Kuitansi, BA Serah Terima Lokasi, BAST Akhir.'] },
@@ -129,8 +130,20 @@ async function apiRun(action, data, opts) {
   if (!res.success && res.code === 'GANTI_SANDI' && S.me && !document.querySelector('[data-wajib-sandi]')) { S.me.wajibGanti = true; setTimeout(() => Pages.map.profil.gantiSandi(true), 0); }
   return res;
 }
+/** v1.2.7: server menolak dengan kode SIBUK sebelum menulis apa pun (kunci tulis sedang dipakai), jadi aksi tulis boleh diulang.
+    Kecuali aksi yang sudah berefek sebelum mengambil kunci (berkas Drive dibuat / sandi diubah). */
+const TANPA_ULANG = /^(arsip\.upload|template\.simpan|dokumen\.generate|auth\.gantiSandi|user\.resetSandi)$/;
+async function apiTulis(action, data, opts) {
+  let r = await apiRun(action, data, opts);
+  for (let i = 1; i <= 2 && r && r.code === 'SIBUK' && !TANPA_ULANG.test(action); i++) {
+    if (!(opts && opts.quiet)) toast('Server sedang sibuk. Mencoba lagi otomatis (' + i + '/2)…', 'info');
+    await new Promise((ok) => setTimeout(ok, 4000 * i));
+    r = await apiRun(action, data, opts);
+  }
+  return r;
+}
 function api(action, data, opts) {
-  if (!READ.test(action)) { _writeEpoch++; return apiRun(action, data, opts); }
+  if (!READ.test(action)) { _writeEpoch++; return apiTulis(action, data, opts); }
   const k = _writeEpoch + '|' + action + '|' + JSON.stringify(data || {});
   if (_inflight[k]) return _inflight[k];
   const p = apiRun(action, data, opts); _inflight[k] = p;
