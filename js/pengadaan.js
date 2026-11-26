@@ -235,6 +235,7 @@ Pages.formPaket = function (p, prefill) {
       ${fld({ name: 'Kode_Rekening', label: 'Kode rekening belanja', value: p.Kode_Rekening, span: 's6', ph: '5.1.02.01.001.00024', hint: 'Terisi otomatis dari pilihan DPA. Lebih dari satu: pisahkan dengan koma.' })}${fld({ name: 'Kode_RUP', label: 'Kode RUP', value: p.Kode_RUP, span: 's6', ph: 'dari SIRUP' })}
       ${fld({ name: 'Jenis_Pengadaan', label: 'Jenis pengadaan', type: 'select', value: p.Jenis_Pengadaan, span: 's4', opts: Object.keys(PK.JENIS).map((k) => [k, PK.JENIS[k]]) })}${fld({ name: 'Metode', label: 'Metode pemilihan', type: 'select', value: p.Metode, span: 's4', opts: [['', '— pilih —']].concat(K.METODE.map((x) => [x, x]), p.Metode && K.METODE.indexOf(p.Metode) < 0 ? [[p.Metode, p.Metode + ' (data lama)']] : []) })}${fld({ name: 'Status', label: 'Status', type: 'select', value: p.Status, span: 's4', opts: Object.keys(PK.ST).filter((k) => k !== 'SELESAI' || p.Status === 'SELESAI').map((k) => [k, PK.ST[k][0]]) })}
       ${fld({ name: 'Pagu_Paket', label: 'Pagu paket', type: 'rp', value: p.Pagu_Paket, span: 's4', req: true })}${fld({ name: 'PPN_Persen', label: 'PPN (%)', type: 'pct', value: p.PPN_Persen, span: 's4', hint: 'Sesuaikan dengan ketentuan pajak yang berlaku' })}${fld({ name: 'Jangka_Waktu', label: 'Jangka waktu (hari kalender)', type: 'num', value: p.Jangka_Waktu, span: 's4' })}
+      <div class="f" id="pBatas"></div>
       ${fld({ name: 'Harga_Termasuk_PPN', label: 'Harga satuan HPS', type: 'select', value: p.Harga_Termasuk_PPN || 'TIDAK', opts: [['YA', 'Sudah termasuk PPN (HPS = Σ volume × harga)'], ['TIDAK', 'Belum termasuk PPN (HPS = Σ × (1 + PPN))']] })}
       ${fld({ name: 'Kualifikasi', label: 'Kualifikasi usaha', type: 'select', value: p.Kualifikasi, span: 's6', opts: [['', '— pilih —']].concat(PK.KUALIFIKASI.map((x) => [x, x])) })}${fld({ name: 'Ijin_Usaha', label: 'Ijin usaha', value: p.Ijin_Usaha, span: 's6', ph: 'KBLI …' })}
       ${fld({ name: 'Lokasi', label: 'Lokasi pekerjaan', value: p.Lokasi })}${fld({ name: 'Catatan', label: 'Catatan', type: 'textarea', rows: 2, value: p.Catatan })}</form>`,
@@ -250,7 +251,12 @@ Pages.formPaket = function (p, prefill) {
       [f.Kode_Rekening, f.Pagu_Paket].forEach((x) => x.dispatchEvent(new Event('input', { bubbles: true })));
     } });
   drawDpa(p.ID_SubKeg);
-  m.el.addEventListener('change', (e) => { if (e.target.name === 'ID_SubKeg') drawDpa(e.target.value); });
+  /* v1.2.6: peringatan batas nilai Pengadaan Langsung (nilai = HPS tersimpan, bila belum ada = pagu di formulir) */
+  const drawBatas = () => { const pagu = num(String(f.Pagu_Paket.value || '').replace(/\./g, '').replace(',', '.')), bm = Aturan.batasMetode(num(p.Nilai_HPS) || pagu, f.Jenis_Pengadaan.value, f.Metode.value);
+    m.el.querySelector('#pBatas').innerHTML = bm ? `<div class="note warn" data-batasmetode>${ic('warn', 'sm')}<div>${esc(bm.teks)} <span class="mini">(${esc(bm.dasar)})</span></div></div>` : ''; };
+  drawBatas();
+  m.el.addEventListener('input', (e) => { if (e.target.name === 'Pagu_Paket') drawBatas(); });
+  m.el.addEventListener('change', (e) => { if (e.target.name === 'ID_SubKeg') drawDpa(e.target.value); if (['Metode', 'Jenis_Pengadaan', 'Pagu_Paket'].indexOf(e.target.name) > -1) drawBatas(); });
   m.el.querySelector('[data-save]').onclick = () => {
     const v = validate(m.el, { ID_SubKeg: req('Sub kegiatan'), Nama_Paket: req('Nama paket'), Kode_Rekening: (x) => (x && !String(x).split(/[,;\n]+/).map((y) => y.replace(/\s+/g, '')).filter(Boolean).every((y) => /^\d+(\.\d+)*$/.test(y)) ? 'Format kode rekening: angka bertitik, mis. 5.1.02.01.001.00024.' : ''), Pagu_Paket: (x) => (x > 0 ? '' : 'Pagu paket harus lebih dari 0.'), PPN_Persen: (x) => (x < 0 || x > 100 ? 'PPN 0–100%.' : '') });
     if (!v) return;
