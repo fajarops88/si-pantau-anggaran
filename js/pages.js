@@ -83,6 +83,51 @@ const RB = {
     return rows;
   }
 };
+/* v1.2.1: pilih uraian dari Rincian DPA (rekening → [#] kelompok → [-] keterangan → item) untuk Nama Paket & Uraian Pekerjaan Kontrak */
+const DpaPilih = {
+  pot(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; },
+  /** Rincian → grup per rekening rinci (kode yang punya kelompok/item di bawahnya). Uraian kembar dalam satu rekening cukup sekali. */
+  susun(rows) {
+    const daun = new Set(rows.filter((r) => r.Jenis !== 'REK' && r.Kode_Rekening).map((r) => String(r.Kode_Rekening).trim())), grup = new Map();
+    rows.forEach((r) => {
+      const kode = String(r.Kode_Rekening || '').trim(), ur = String(r.Uraian || '').replace(/\s+/g, ' ').trim();
+      if (!kode || !ur || !daun.has(kode)) return;
+      if (!grup.has(kode)) grup.set(kode, { kode, nama: '', jumlah: 0, opsi: [], lihat: new Set() });
+      const g = grup.get(kode); if (r.Jenis === 'REK') { g.nama = ur; g.jumlah = num(r.Jumlah); }
+      const kunci = norm(ur); if (g.lihat.has(kunci)) return; g.lihat.add(kunci);
+      g.opsi.push({ jenis: r.Jenis, kode, uraian: ur, jumlah: num(r.Jumlah), vol: r.Jenis === 'ITEM' && r.Volume !== '' ? fmtN(r.Volume, 2).replace(/,00$/, '') + ' ' + (r.Satuan || '') : '' });
+    });
+    return [...grup.values()];
+  },
+  label(o) {
+    const pre = { KELOMPOK: '\u00a0\u00a0[#] ', KETERANGAN: '\u00a0\u00a0\u00a0\u00a0[-] ', ITEM: '\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0• ' }[o.jenis] || 'Rekening: ';
+    return pre + this.pot(o.uraian, 100) + (o.vol ? ' · ' + o.vol : '') + ' — Rp ' + fmtN(Math.round(o.jumlah));
+  },
+  /** Pasang pilihan di wadah .f. opt = { input: elemen nama/uraian, pakai: Set(norm uraian yang sudah dipakai), isi(o, grup), labelPakai } */
+  async pasang(box, idSk, opt) {
+    const tok = box.dataset.tok = Math.random().toString(36).slice(2);
+    if (!idSk) { box.innerHTML = '<label>Ambil dari Rincian DPA</label><div class="hint" style="margin:0">Pilih Sub Kegiatan terlebih dahulu.</div>'; return; }
+    box.innerHTML = '<label>Ambil dari Rincian DPA</label><select class="in" data-dpa disabled><option>Memuat rincian DPA…</option></select><div class="hint"></div>';
+    const sel = box.querySelector('select'), hint = box.querySelector('.hint');
+    let rows; try { rows = await RB.ambil(idSk); } catch (e) { if (box.dataset.tok === tok) { sel.innerHTML = '<option value="">Rincian DPA gagal dimuat</option>'; hint.textContent = e.message + ' Ketik manual.'; } return; }
+    if (box.dataset.tok !== tok) return;
+    const grup = this.susun(rows), semua = [];
+    if (!grup.length) { sel.innerHTML = '<option value="">Rincian DPA belum diimpor</option>'; hint.innerHTML = 'Impor PDF "RKA/DPA Rincian Belanja" dari SIPD-RI untuk Sub Kegiatan ini di menu Perencanaan Anggaran, atau ketik manual di bawah.'; return; }
+    const pakai = opt.pakai || new Set();
+    sel.innerHTML = '<option value="">— pilih uraian rekening atau rincian di bawahnya —</option>' + grup.map((g) => `<optgroup label="${esc(g.kode + ' · ' + this.pot(g.nama || 'Rekening', 90))}">${g.opsi.map((o) => { semua.push(o); return `<option value="${semua.length - 1}">${esc((pakai.has(norm(o.uraian)) ? '✓ ' : '') + this.label(o))}</option>`; }).join('')}</optgroup>`).join('');
+    sel.disabled = false;
+    const dasar = grup.length + ' rekening · ' + semua.length + ' uraian' + ([...pakai].some((u) => semua.some((o) => norm(o.uraian) === u)) ? ' · ✓ = ' + (opt.labelPakai || 'sudah dipakai') : '');
+    const tampil = () => {
+      const t = norm(opt.input.value), i = t ? semua.findIndex((o) => norm(o.uraian) === t) : -1;
+      sel.value = i > -1 ? String(i) : '';
+      const o = semua[i];
+      hint.innerHTML = o ? `${ic('check', 'sm')} Sesuai uraian DPA · rekening <span class="mono">${esc(o.kode)}</span> · Rp ${fmtN(Math.round(o.jumlah))}` : t ? `<span class="c-warn">${ic('warn', 'sm')} Tidak sama persis dengan uraian DPA mana pun — pilih dari daftar bila memungkinkan.</span>` : esc(dasar);
+    };
+    sel.onchange = () => { const o = semua[num(sel.value)]; if (sel.value === '' || !o) { tampil(); return; } opt.isi(o, grup.find((g) => g.kode === o.kode)); opt.input.dispatchEvent(new Event('input', { bubbles: true })); tampil(); };
+    opt.input.addEventListener('input', tampil);
+    tampil();
+  }
+};
 const isContoh = (id) => /^CTH-/.test(String(id || ''));
 
 Pages.add({
@@ -295,7 +340,8 @@ Pages.formKontrak = function (k, prefill) {
       <div class="f" id="kPaket"></div>
       <div class="f"><div class="row"><button type="button" class="btn sm" data-spk>${ic('upload', 'sm')}Isi otomatis dari dokumen SPK (Word/Excel/PDF)</button><input type="file" id="fileSpk" class="hidden" accept=".docx,.xlsx,.xls,.pdf,.txt"><span class="mini">Nomor, tanggal, nilai, penyedia, NPWP ditebak dari teks — periksa sebelum simpan.</span></div></div>
       ${fld({ name: 'No_SPK', label: 'Nomor SPK / Kontrak', value: k.No_SPK, span: 's8', req: true, ph: '027/04/SPK-PPK/DISHUB/2026' })}${fld({ name: 'Tgl_SPK', label: 'Tanggal SPK', value: k.Tgl_SPK, type: 'date', span: 's4', req: true })}
-      ${fld({ name: 'Uraian_Pekerjaan', label: 'Uraian Pekerjaan', value: k.Uraian_Pekerjaan, type: 'textarea', rows: 2, req: true })}
+      <div class="f" id="kDpa"></div>
+      ${fld({ name: 'Uraian_Pekerjaan', label: 'Uraian Pekerjaan', value: k.Uraian_Pekerjaan, type: 'textarea', rows: 2, req: true, hint: 'Sebaiknya sama dengan uraian di DPA — pilih dari daftar di atas.' })}
       ${fld({ name: 'Nilai_Kontrak', label: 'Nilai Kontrak', value: k.Nilai_Kontrak, type: 'rp', span: 's6', req: true })}${fld({ name: 'Metode', label: 'Metode Pengadaan', value: k.Metode, type: 'select', span: 's6', opts: [['', '— pilih —']].concat(K.METODE.map((x) => [x, x])) })}
       ${fld({ name: 'Tgl_Mulai', label: 'Mulai', value: k.Tgl_Mulai, type: 'date', span: 's4', req: true })}${fld({ name: 'Tgl_Selesai', label: 'Selesai', value: k.Tgl_Selesai, type: 'date', span: 's4', req: true })}${fld({ name: 'Status', label: 'Status', value: k.Status, type: 'select', span: 's4', opts: [['DRAF', 'Draf'], ['AKTIF', 'Aktif'], ['SELESAI', 'Selesai'], ['PUTUS', 'Putus Kontrak']] })}
       <div class="sect">Penyedia</div>
@@ -316,12 +362,17 @@ Pages.formKontrak = function (k, prefill) {
   };
   const infoPaket = () => { const sel = m.el.querySelector('select[name=ID_Paket]'), inf = m.el.querySelector('#kPaketInfo'); if (!sel || !inf) return; const p = Store.get('pengadaan', sel.value); inf.innerHTML = p ? `HPS ${rp(p.Nilai_HPS)} · ${esc(p.Metode || 'metode belum diisi')} · arsip Instruksi/HPS/Spesifikasi paket ini ikut terhitung di checklist kontrak.` : 'Tautkan bila kontrak ini hasil dari paket pengadaan di menu Pengadaan Barang/Jasa.'; };
   drawPaket(k.ID_SubKeg);
+  const fK = m.el.querySelector('form');
+  const drawDpa = (idSk) => DpaPilih.pasang(m.el.querySelector('#kDpa'), idSk, { input: fK.Uraian_Pekerjaan, labelPakai: 'sudah dipakai kontrak lain',
+    pakai: new Set(S.t.kontrak.filter((x) => x.ID_SubKeg === idSk && x.ID_Kontrak !== k.ID_Kontrak).map((x) => norm(x.Uraian_Pekerjaan))),
+    isi: (o) => { fK.Uraian_Pekerjaan.value = o.uraian; } });
+  drawDpa(k.ID_SubKeg);
   m.el.querySelector('[data-spk]').onclick = () => { const inp = m.el.querySelector('#fileSpk'); inp.onchange = async () => { const fl = inp.files[0]; inp.value = ''; if (!fl) return;
     try { const g = Impor.tebakSpk(await Impor.teks(fl)), f = m.el.querySelector('form'); let n = 0;
       Object.keys(g).forEach((key) => { const el = f.elements[key]; if (!el || g[key] === '' || g[key] == null) return; if (el.value) return; el.value = key === 'Nilai_Kontrak' ? fmtN(g[key]) : g[key]; el.dispatchEvent(new Event('input', { bubbles: true })); n++; });
       toast(n ? n + ' isian terisi dari ' + fl.name + '. Periksa kembali.' : 'Tidak ada isian yang dikenali dari ' + fl.name + '.', n ? 'ok' : 'warn'); } catch (er) { toast(er.message, 'err'); } }; inp.click(); };
   m.el.addEventListener('change', (e) => {
-    if (e.target.name === 'ID_SubKeg') drawPaket(e.target.value);
+    if (e.target.name === 'ID_SubKeg') { drawPaket(e.target.value); drawDpa(e.target.value); }
     if (e.target.name === 'ID_Paket') { infoPaket(); const p = Store.get('pengadaan', e.target.value), f = m.el.querySelector('form'); if (p && baru) { if (!f.Uraian_Pekerjaan.value) f.Uraian_Pekerjaan.value = p.Nama_Paket; if (!f.Metode.value && p.Metode) f.Metode.value = p.Metode; } }
   });
   m.el.querySelector('[data-save]').onclick = async () => {
@@ -848,7 +899,7 @@ const Gen = {
     if (p) {
       const items = PK.items(p.ID_Paket), h = PK.hitung(items, p.PPN_Persen, p.Harga_Termasuk_PPN), hps = num(p.Nilai_HPS) || h.total;
       const dasar = String(p.Dasar_Instruksi || S.settings.DASAR_INSTRUKSI || '').split('\n').map((x) => x.trim()).filter(Boolean), met = String(p.Metode || '');
-      Object.assign(v, { KODE_RUP: p.Kode_RUP, KUALIFIKASI: p.Kualifikasi, IJIN_USAHA: p.Ijin_Usaha, DASAR_INSTRUKSI: dasar.map((x, i) => (i + 1) + '. ' + x).join('\n'), NAMA_PEKERJAAN: p.Nama_Paket, PAGU_DANA: num(p.Pagu_Paket),
+      Object.assign(v, { KODE_RUP: p.Kode_RUP, KODE_REKENING: p.Kode_Rekening, KUALIFIKASI: p.Kualifikasi, IJIN_USAHA: p.Ijin_Usaha, DASAR_INSTRUKSI: dasar.map((x, i) => (i + 1) + '. ' + x).join('\n'), NAMA_PEKERJAAN: p.Nama_Paket, PAGU_DANA: num(p.Pagu_Paket),
         PERIHAL: 'Instruksi Pengadaan ' + (/E-Purchasing/i.test(met) ? 'E-Purchasing' : met || 'Barang/Jasa'),
         CARA_PENGADAAN: /^(Tender|Seleksi)$/i.test(met) ? 'SPSE ' + met : /Swakelola/i.test(met) ? 'Swakelola' : 'SPSE Non-Tender',
         SUMBER_DANA_DOKUMEN: (sk && (num(sk.Pagu_Sebelum) || /perubahan/i.test(sk.Tahap_Anggaran || '')) ? 'DPPA ' : 'DPA ') + (sk ? sk.Tahun : S.tahun),
