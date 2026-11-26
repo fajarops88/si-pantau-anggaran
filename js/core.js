@@ -4,9 +4,10 @@
    router hash, kalkulasi realisasi, grafik SVG, ekspor, utilitas UI.
    ===================================================================== */
 'use strict';
-const APP_VERSION = '1.2.2';
+const APP_VERSION = '1.2.3';
 /** Riwayat versi frontend (terbaru di atas) — tampil di menu Profil → Riwayat Versi */
 const FE_RIWAYAT = [
+  { versi: '1.2.3', tanggal: '2026-11-26', catatan: ['Rujukan aturan untuk tugas PPK: dokumen harga otomatis bernama Referensi Harga untuk E-purchasing ≤ Rp100 juta (PerLKPP 2/2026 Ps. 13), saran bentuk kontrak menurut nilai (Perpres 16/2018 s.t.d.t.d. 46/2025 Ps. 28), dan jaminan pelaksanaan E-purchasing (PerLKPP 2/2026 Ps. 20).', 'Pemeriksaan teks dasar hukum: judul resmi & aturan yang belum/tidak berlaku pada tanggal dokumen; tombol teks dasar hukum baku.', 'Surat Pesanan/BAPP/BAST e-Katalog ditandai sebagai draf internal; dokumen sah diterbitkan sistem Katalog Elektronik.', 'Master checklist: isi dasar regulasi terverifikasi (HPS, kontrak, jaminan). Placeholder baru: {{JUDUL_HPS}}, {{SINGKATAN_HPS}}, {{DASAR_HARGA}}, {{BENTUK_KONTRAK}}.'] },
   { versi: '1.2.2', tanggal: '2026-11-26', catatan: ['Jenis template baru: Surat Pesanan dan BAPP (Berita Acara Penyelesaian Pekerjaan), tampil di dokumen Kontrak saja.', 'Isian Surat Pesanan/BAPP/BAST terisi otomatis dari kontrak (nilai sebelum PPN, PPN, termin, nomor BAPP sebelumnya, persen pekerjaan, penerima, lokasi); tabel berulang dapat ditambah/dihapus barisnya.', 'Pengaturan: NPWP instansi. Arsip: jenis BAPP.', 'Placeholder baru: {{NPWP_INSTANSI}}, {{NILAI_SEBELUM_PPN}}, {{NILAI_PPN_KONTRAK}}, {{JUMLAH_TERMIN}}, {{TERMIN_KE}}, {{NOMOR_BAPP}}, {{PERSEN_PEKERJAAN}}, {{NAMA_PENERIMA}}, {{TGL_SELESAI_PEKERJAAN}}, {{TGL_PEMERIKSAAN}}, blok {{#TERMIN}}.'] },
   { versi: '1.2.1', tanggal: '2026-11-26', catatan: ['Paket pengadaan: kolom Kode Rekening; nama paket dipilih dari uraian Rincian DPA (rekening, [#] kelompok, [-] keterangan, atau item) dan kode rekening serta pagu terisi otomatis.', 'Kontrak/SPK: Uraian Pekerjaan dapat dipilih dari uraian Rincian DPA Sub Kegiatan.', 'Placeholder dokumen baru: {{KODE_REKENING}}.'] },
   { versi: '1.2.0', tanggal: '2026-11-26', catatan: ['Perencanaan mengikuti format SIPD-RI: impor PDF "Cetak RKA/DPA Rincian Belanja" per Sub Kegiatan (bisa banyak berkas sekaligus), termasuk dokumen perubahan (sebelum/sesudah).', 'Halaman Rincian Anggaran Belanja per Sub Kegiatan: identitas, indikator, rincian rekening/item, export Excel.', 'Pengadaan mengikuti format Instruksi, HPS, dan Spesifikasi Teknis Dishub: Kode RUP, kualifikasi, ijin usaha, dasar instruksi, harga HPS sudah termasuk PPN, spesifikasi fungsi/waktu/pelayanan.', 'Isi otomatis dari dokumen Instruksi, impor tabel HPS dari PDF, impor spesifikasi mutu dari Word/PDF, dan ambil item HPS dari Rincian DPA.', 'Data contoh (dummy) dapat diisi/dihapus dari Pengaturan → Status Sistem.'] },
@@ -753,3 +754,76 @@ function skeletonPage() {
   return `<div class="ph"><div style="flex:1"><div class="sk" style="width:180px"></div><div class="sk" style="height:26px;width:60%;margin-top:10px"></div></div></div><div class="grid g4 mb">${k + k + k + k}</div><div class="card"><div class="card-b">${'<div class="sk" style="margin:12px 0"></div>'.repeat(8)}</div></div>`;
 }
 document.addEventListener('DOMContentLoaded', () => App.init());
+
+/* =====================================================================
+   ATURAN PBJ (v1.2.3) — hanya tugas PPK/internal dinas; proses Pejabat Pengadaan tidak dimodelkan.
+   Rujukan dicocokkan dengan naskah: Perpres 16/2018 s.t.d.t.d. Perpres 46/2025 (Pasal 26 ayat 7, Pasal 28)
+   dan PerLKPP 2/2026 (Pasal 1 angka 21/25/26, Pasal 13, 19, 20). Ketentuan lain sengaja tidak diterapkan.
+   ===================================================================== */
+const Aturan = {
+  PERPRES: 'Perpres 16/2018 s.t.d.t.d. Perpres 46/2025',
+  DASAR_BAKU: [
+    'Peraturan Presiden Nomor 16 Tahun 2018 tentang Pengadaan Barang/Jasa Pemerintah sebagaimana telah diubah terakhir dengan Peraturan Presiden Nomor 46 Tahun 2025 tentang Perubahan Kedua atas Peraturan Presiden Nomor 16 Tahun 2018 tentang Pengadaan Barang/Jasa Pemerintah;',
+    'Peraturan Lembaga Kebijakan Pengadaan Barang/Jasa Pemerintah Nomor 3 Tahun 2026 tentang Pedoman Persiapan dan Pelaksanaan Pengadaan Barang/Jasa Pemerintah Melalui Penyedia;',
+    'Peraturan Lembaga Kebijakan Pengadaan Barang/Jasa Pemerintah Nomor 2 Tahun 2026 tentang Katalog Elektronik dalam Pengadaan Barang/Jasa Pemerintah;',
+    'Dokumen Pelaksanaan Anggaran (DPA/DPPA) Tahun Anggaran berjalan.'
+  ].join('\n'),
+  /** Dasar regulasi checklist yang sudah diverifikasi (diisi hanya bila kolom masih kosong/"lengkapi") */
+  CHECKLIST: {
+    HPS: { item: 'HPS / Referensi Harga & bukti survei harga', lama: 'Harga Perkiraan Sendiri (HPS) & bukti survei harga',
+      dasar: 'Perpres 16/2018 s.t.d.t.d. Perpres 46/2025 Pasal 26; PerLKPP 2/2026 Pasal 13 (E-purchasing: Referensi Harga ≤ Rp100 juta, HPS > Rp100 juta)' },
+    SPK: { item: 'Kontrak sesuai bentuknya (bukti pembelian/kuitansi/SPK/surat perjanjian; E-purchasing: Surat/Bukti Pesanan elektronik)', lama: 'SPK / Surat Perjanjian bermeterai, ditandatangani basah kedua pihak',
+      dasar: 'Perpres 16/2018 s.t.d.t.d. Perpres 46/2025 Pasal 28; PerLKPP 2/2026 Pasal 19 (Surat/Bukti Pesanan ditandatangani elektronik)' },
+    JAMINAN: { item: '', lama: '', dasar: 'PerLKPP 2/2026 Pasal 20 (E-purchasing, nilai kontrak > Rp200 juta); metode lain: lengkapi pasal Perpres' }
+  },
+  epur(metode) { return /purchasing|katalog/i.test(String(metode || '')); },
+  /** Dokumen harga paket: HPS atau Referensi Harga. Nilai = HPS tersimpan, bila belum ada = pagu paket. */
+  harga(p) {
+    p = p || {}; const nilai = num(p.Nilai_HPS) || num(p.Pagu_Paket), ep = this.epur(p.Metode);
+    if (ep && nilai > 0 && nilai <= 100e6) return { kode: 'REF', nama: 'Referensi Harga', judul: 'REFERENSI HARGA', singkat: 'Referensi Harga', dasar: 'PerLKPP 2/2026 Pasal 13 ayat (2)',
+      ket: 'E-purchasing bernilai paling banyak Rp100 juta: PPK menyiapkan Referensi Harga, bukan HPS. Kewajiban ini dikecualikan untuk pembelian langsung pada produk berharga tetap (Pasal 13 ayat (3)).' };
+    const r = { kode: 'HPS', nama: 'Harga Perkiraan Sendiri (HPS)', judul: 'HARGA PERKIRAAN SENDIRI', singkat: 'HPS', dasar: ep ? 'PerLKPP 2/2026 Pasal 13 ayat (1)' : this.PERPRES + ' Pasal 26', ket: '' };
+    if (ep) r.ket = 'E-purchasing di atas Rp100 juta: PPK menetapkan HPS. Dikecualikan untuk pembelian langsung pada produk berharga tetap (PerLKPP 2/2026 Pasal 13 ayat (3)).';
+    else if (num(p.Pagu_Paket) > 0 && num(p.Pagu_Paket) <= 10e6) r.ket = 'Pagu paling banyak Rp10 juta: penyusunan HPS dikecualikan (' + this.PERPRES + ' Pasal 26 ayat (7)).';
+    return r;
+  },
+  /** Bentuk kontrak (Perpres Pasal 28). jenis = kode PK.JENIS; kosong → dianggap Barang/Jasa Lainnya. */
+  bentukKontrak(nilai, jenis, metode) {
+    const n = num(nilai), P = this.PERPRES + ' Pasal 28';
+    if (/swakelola/i.test(metode || '')) return null;
+    if (this.epur(metode)) return { bentuk: 'Surat/Bukti Pesanan', dasar: P + ' ayat (6); PerLKPP 2/2026 Pasal 19', ket: 'ditandatangani PPK dan Penyedia secara elektronik melalui sistem Katalog Elektronik' };
+    if (!(n > 0)) return null;
+    const o = (bentuk, ay) => ({ bentuk, dasar: P + ' ayat ' + ay, ket: jenis ? '' : 'jenis pengadaan belum diketahui, dianggap Barang/Jasa Lainnya' });
+    if (jenis === 'KONSULTANSI') return n <= 100e6 ? o('Surat Perintah Kerja (SPK)', '(4)') : o('Surat perjanjian', '(5)');
+    if (jenis === 'KONSTRUKSI') return n <= 400e6 ? o('Surat Perintah Kerja (SPK)', '(4)') : o('Surat perjanjian', '(5)');
+    if (n <= 10e6) return o('Bukti pembelian/pembayaran atau kuitansi', '(2)–(3)');
+    if (n <= 50e6) return o('Kuitansi', '(3)');
+    if (n <= 200e6) return o('Surat Perintah Kerja (SPK)', '(4)');
+    return o('Surat perjanjian', '(5)');
+  },
+  /** Jaminan pelaksanaan — hanya ketentuan E-purchasing (PerLKPP 2/2026 Pasal 20) */
+  jaminan(nilai, jenis, metode) {
+    if (!this.epur(metode) || jenis === 'KONSULTANSI' || !(num(nilai) > 0)) return null;
+    return num(nilai) > 200e6
+      ? { wajib: true, teks: 'Jaminan pelaksanaan diberlakukan (nilai kontrak di atas Rp200 juta), kecuali jasa lainnya yang aset Penyedia dikuasai pengguna.', dasar: 'PerLKPP 2/2026 Pasal 20' }
+      : { wajib: false, teks: 'Jaminan pelaksanaan tidak disyaratkan untuk E-purchasing bernilai paling banyak Rp200 juta.', dasar: 'PerLKPP 2/2026 Pasal 20 ayat (1)' };
+  },
+  /** Ringkasan aturan kontrak untuk ditampilkan (HTML) */
+  kontrakHtml(nilai, jenis, metode) {
+    const b = this.bentukKontrak(nilai, jenis, metode), j = this.jaminan(nilai, jenis, metode);
+    if (!b && !j) return '';
+    return `<div class="note info" data-aturan>${ic('info', 'sm')}<div>${b ? `Bentuk kontrak: <b>${esc(b.bentuk)}</b>${b.ket ? ' — ' + esc(b.ket) : ''} <span class="mini">(${esc(b.dasar)})</span>` : ''}${j ? `${b ? '<br>' : ''}${esc(j.teks)} <span class="mini">(${esc(j.dasar)})</span>` : ''}</div></div>`;
+  },
+  /** Peringatan teks dasar hukum: judul tidak resmi & aturan yang belum/tidak berlaku pada tanggal dokumen */
+  cekDasar(teks, tgl) {
+    const t = String(teks || ''), d = String(tgl || todayISO()).slice(0, 10), w = [], lk = (n) => new RegExp('(LKPP|Lembaga)[^;\\n]{0,90}Nomor ' + n + ' Tahun', 'i');
+    if (/Nomor 46 Tahun 2025 tentang Perubahan atas/i.test(t)) w.push('Judul resmi Perpres 46/2025 adalah "Perubahan Kedua atas Peraturan Presiden Nomor 16 Tahun 2018".');
+    if (lk('3').test(t) && /Nomor 3 Tahun 2026/i.test(t) && /Persiapan Pelaksanaan/i.test(t)) w.push('Judul resmi PerLKPP 3/2026: "Pedoman Persiapan dan Pelaksanaan Pengadaan Barang/Jasa Pemerintah Melalui Penyedia".');
+    if (lk('2').test(t) && /Nomor 2 Tahun 2026/i.test(t) && d < '2026-09-01') w.push('PerLKPP 2/2026 baru berlaku 1 September 2026; sebelum itu berlaku PerLKPP 9/2021.');
+    if (lk('3').test(t) && /Nomor 3 Tahun 2026/i.test(t) && d < '2026-09-22') w.push('PerLKPP 3/2026 diundangkan 22 September 2026; sebelum itu berlaku PerLKPP 12/2021 sebagaimana diubah PerLKPP 4/2024.');
+    if (lk('9').test(t) && /Nomor 9 Tahun 2021/i.test(t) && d >= '2026-09-01') w.push('PerLKPP 9/2021 sudah dicabut oleh PerLKPP 2/2026 (berlaku 1 September 2026).');
+    if (lk('12').test(t) && /Nomor 12 Tahun 2021/i.test(t) && d >= '2026-09-22') w.push('PerLKPP 12/2021 dan perubahannya sudah dicabut oleh PerLKPP 3/2026 (diundangkan 22 September 2026).');
+    return w;
+  },
+  cekDasarHtml(teks, tgl) { const w = this.cekDasar(teks, tgl); return w.length ? `<div class="note warn mt-s" data-cekdasar>${ic('warn', 'sm')}<div>${w.map(esc).join('<br>')}</div></div>` : ''; }
+};
