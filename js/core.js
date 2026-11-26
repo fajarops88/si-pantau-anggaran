@@ -4,9 +4,10 @@
    router hash, kalkulasi realisasi, grafik SVG, ekspor, utilitas UI.
    ===================================================================== */
 'use strict';
-const APP_VERSION = '1.2.4';
+const APP_VERSION = '1.2.5';
 /** Riwayat versi frontend (terbaru di atas) — tampil di menu Profil → Riwayat Versi */
 const FE_RIWAYAT = [
+  { versi: '1.2.5', tanggal: '2026-11-26', catatan: ['Halaman Progres untuk Kepala Dinas dan Sekretaris tanpa login: angka ringkasan, serapan per bidang, jumlah paket menurut status per bidang, dan daftar paket yang dapat dibuka untuk melihat tahapan serta realisasi bulanan.', 'Admin mengatur status Ditampilkan/Disembunyikan, bidang, dan bagian di Pengaturan → Halaman Progres. Bila disembunyikan, halaman depan tetap halaman login.', 'Evaluasi triwulanan berjenjang sampai Kepala Bidang: Kepala Dinas dan Sekretaris tidak perlu login; pejabat yang atasannya tidak terdaftar atau nonaktif tidak lagi muncul sebagai belum dinilai.'] },
   { versi: '1.2.4', tanggal: '2026-11-26', catatan: ['Dokumen disarankan per metode, jenis, dan nilai: tab baru di Paket Pengadaan dan bagian di detail Kontrak, lengkap dengan dasar aturan (PerLKPP 3/2026, PerLKPP 2/2026, Perpres Pasal 28), status draf/scan, dan tombol Buat dokumen.', 'Template bawaan siap pasang (Pengaturan → Template Dokumen): Instruksi PPK, HPS, Spesifikasi, Surat Penunjukan, SPK Barang/Lumsum/Harga Satuan/Waktu Penugasan, Surat Perjanjian, Kuitansi, BA Serah Terima Lokasi, BAST Pekerjaan, BAST Akhir, dokumen e-Katalog, dan Laporan Triwulanan.', 'Jenis template baru: Surat Penunjukan Penyedia, Surat Perjanjian, Kuitansi, BA Serah Terima Lokasi, BAST Akhir.'] },
   { versi: '1.2.3', tanggal: '2026-11-26', catatan: ['Rujukan aturan untuk tugas PPK: dokumen harga otomatis bernama Referensi Harga untuk E-purchasing ≤ Rp100 juta (PerLKPP 2/2026 Ps. 13), saran bentuk kontrak menurut nilai (Perpres 16/2018 s.t.d.t.d. 46/2025 Ps. 28), dan jaminan pelaksanaan E-purchasing (PerLKPP 2/2026 Ps. 20).', 'Pemeriksaan teks dasar hukum: judul resmi & aturan yang belum/tidak berlaku pada tanggal dokumen; tombol teks dasar hukum baku.', 'Surat Pesanan/BAPP/BAST e-Katalog ditandai sebagai draf internal; dokumen sah diterbitkan sistem Katalog Elektronik.', 'Master checklist: isi dasar regulasi terverifikasi (HPS, kontrak, jaminan). Placeholder baru: {{JUDUL_HPS}}, {{SINGKATAN_HPS}}, {{DASAR_HARGA}}, {{BENTUK_KONTRAK}}.'] },
   { versi: '1.2.2', tanggal: '2026-11-26', catatan: ['Jenis template baru: Surat Pesanan dan BAPP (Berita Acara Penyelesaian Pekerjaan), tampil di dokumen Kontrak saja.', 'Isian Surat Pesanan/BAPP/BAST terisi otomatis dari kontrak (nilai sebelum PPN, PPN, termin, nomor BAPP sebelumnya, persen pekerjaan, penerima, lokasi); tabel berulang dapat ditambah/dihapus barisnya.', 'Pengaturan: NPWP instansi. Arsip: jenis BAPP.', 'Placeholder baru: {{NPWP_INSTANSI}}, {{NILAI_SEBELUM_PPN}}, {{NILAI_PPN_KONTRAK}}, {{JUMLAH_TERMIN}}, {{TERMIN_KE}}, {{NOMOR_BAPP}}, {{PERSEN_PEKERJAAN}}, {{NAMA_PENERIMA}}, {{TGL_SELESAI_PEKERJAAN}}, {{TGL_PEMERIKSAAN}}, blok {{#TERMIN}}.'] },
@@ -100,7 +101,7 @@ const Activity = { at: Date.now(), last: {},
 /* =====================================================================
    API
    ===================================================================== */
-const READ = /^(boot|ping|sistem\.status|arsip\.ambil|berkas\.ambil)$/;
+const READ = /^(boot|ping|sistem\.status|arsip\.ambil|berkas\.ambil|progres\.publik)$/;
 const _inflight = {}; let _writeEpoch = 0; let _busy = 0;
 function progress(on) {
   _busy += on ? 1 : -1; const b = $('#syncBar'); if (!b) return;
@@ -650,7 +651,9 @@ const App = {
   openSide() { $('#side').classList.add('open'); $('#scrim').classList.remove('hidden'); },
   closeSide() { $('#side').classList.remove('open'); $('#scrim').classList.add('hidden'); },
   showLogin(msg) {
+    this._masuk = false; Progres.tutup();
     $('#appShell').classList.add('hidden'); $('#loginScreen').classList.remove('hidden');
+    this.tautanProgres();
     $('#lgCfg').classList.toggle('hidden', CFG.ok);
     if (msg) { const e = $('#lgErr'); e.textContent = msg; e.classList.remove('hidden'); }
     warmUpServer('pub');
@@ -662,8 +665,13 @@ const App = {
     if (!r.success) { err.textContent = r.message || 'Gagal masuk.'; err.classList.remove('hidden'); return r; }
     this.enter(); return r;
   },
+  /** Tautan "Kembali ke halaman progres" di kartu login (v1.2.5) */
+  tautanProgres() { const a = $('#lgProgres'); if (a) a.classList.toggle('hidden', !(Progres.data && Progres.data.aktif)); },
   async enter() {
+    Progres.tutup();
     $('#loginScreen').classList.add('hidden'); $('#appShell').classList.remove('hidden');
+    if (this._masuk && S.me) { this.render(); return; }
+    this._masuk = true;
     const hadLocal = Store.load();
     if (hadLocal) { S.me = Object.assign({}, S.me, Auth.me || {}); this.chrome(); this.render(); Sync.ui('ok'); Sync.run(); }
     else {
@@ -678,7 +686,11 @@ const App = {
   init() {
     Activity.init(); Auth.init(); Sync.start();
     $('#lgVer').textContent = 'v' + APP_VERSION;
-    addEventListener('hashchange', () => this.render());
+    addEventListener('hashchange', () => {
+      if (Progres.rute()) { Progres.tampil(); return; }
+      if (Progres.on) { Progres.tutup(); if (Auth.token && Auth.me) this.enter(); else this.showLogin(); return; }
+      this.render();
+    });
     $('#menuBtn').onclick = () => this.openSide(); $('#scrim').onclick = () => this.closeSide();
     $('#meBox').onclick = () => this.go('#/profil');
     $('#taChip').onclick = () => Pages.pilihTahun();
@@ -704,6 +716,7 @@ const App = {
     };
     $('#lgPwLink').onclick = (e) => { e.preventDefault(); $('#pwForm').classList.toggle('hidden'); };
     $('#lgDarurat').onclick = (e) => { e.preventDefault(); Pages.loginDarurat(); };
+    $('#lgProgres').onclick = (e) => { e.preventDefault(); Progres.pilihLogin = false; Progres.tampil(true); };
     // PWA install
     let deferred = null;
     addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferred = e; $('#installBtn').style.display = ''; });
@@ -711,7 +724,9 @@ const App = {
     if ('serviceWorker' in navigator && location.protocol !== 'file:') addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
     if (!navigator.onLine) $('#offlineBar').classList.remove('hidden');
     // Mulai
-    if (Auth.token && Auth.me) this.enter(); else this.showLogin();
+    if (Progres.rute()) Progres.tampil();
+    else if (Auth.token && Auth.me) this.enter();
+    else Progres.depan();
   }
 };
 /* ---------------- Google Identity Services (login tanpa kata sandi) ---------------- */

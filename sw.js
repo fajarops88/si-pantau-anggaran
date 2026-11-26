@@ -1,6 +1,6 @@
 /* Service worker SI-PANTAU — cache aset statis; API GAS selalu ke jaringan */
-const VERSI = 'sipantau-v1.2.4-kop';
-const ASET = ['./', './index.html', './css/app.css?v=1.2.4', './js/config.js?v=1.2.4', './js/core.js?v=1.2.4', './js/pages.js?v=1.2.4', './js/impor.js?v=1.2.4', './js/pengadaan.js?v=1.2.4',
+const VERSI = 'sipantau-v1.2.5';
+const ASET = ['./', './index.html', './css/app.css?v=1.2.5', './js/config.js?v=1.2.5', './js/core.js?v=1.2.5', './js/pages.js?v=1.2.5', './js/impor.js?v=1.2.5', './js/pengadaan.js?v=1.2.5', './js/progres.js?v=1.2.5',
   './manifest.json', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'];
 
 self.addEventListener('install', (e) => {

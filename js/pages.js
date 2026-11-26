@@ -17,6 +17,8 @@ function turunanDari(email) {
   const out = [], seen = {}; const walk = (e) => { S.t.pengguna.forEach((u) => { if (norm(u.Atasan_Email) === norm(e) && !seen[norm(u.Email)]) { seen[norm(u.Email)] = 1; out.push(u.Email); walk(u.Email); } }); };
   walk(email); return out;
 }
+/** v1.2.5: pejabat dinilai di aplikasi hanya bila atasan langsungnya terdaftar & aktif (evaluasi berhenti di Kabid) */
+function dinilaiDiAplikasi(u) { const a = u && u.Atasan_Email ? Store.user(u.Atasan_Email) : null; return !!(a && a.Aktif !== 'TIDAK'); }
 /** Sub kegiatan dalam tanggung jawab seorang pejabat (PIC dirinya atau turunannya) */
 function skLingkup(email) { const set = [email].concat(turunanDari(email)).map(norm); return S.t.subkeg.filter((s) => set.indexOf(norm(s.PIC_Email)) > -1); }
 function cutSelect(st, name) { return `<select class="in" name="${name || 'cut'}" aria-label="Posisi data">${K.BULAN.map((b, i) => `<option value="${i + 1}" ${num(st.cut) === i + 1 ? 'selected' : ''}>s.d. ${b}</option>`).join('')}</select>`; }
@@ -39,7 +41,7 @@ Pages.add({
     const telat = kontrak.filter((k) => Calc.kontrakStatus(k) === 'TERLAMBAT').length;
     el.innerHTML = ph({ eyebrow: 'Sistem Monitoring & Pengendalian APBD', title: 'Dashboard Pengendalian & Realisasi Anggaran',
       desc: `Tahun Anggaran ${esc(S.tahun)} · ${esc(S.settings.NAMA_INSTANSI || '')} · Posisi data s.d. ${K.BULAN[cut - 1]} ${esc(S.tahun)}`,
-      acts: `${selectHtml('bidang', optBidang('Semua Bidang (' + Store.bidangList().length + ')'), st.bidang)}${cutSelect(st)}<button class="btn pri" data-act="print">${ic('print', 'sm')}Cetak Ringkasan</button>` }) +
+      acts: `${selectHtml('bidang', optBidang('Semua Bidang (' + Store.bidangList().length + ')'), st.bidang)}${cutSelect(st)}${String(S.settings.PROGRES_PUBLIK || '').toUpperCase() === 'YA' ? `<a class="btn" href="#/progres" title="Halaman progres untuk pimpinan (tanpa login)">${ic('eye', 'sm')}Halaman progres</a>` : ''}<button class="btn pri" data-act="print">${ic('print', 'sm')}Cetak Ringkasan</button>` }) +
     `<div class="grid g4 mb">
       ${kpi({ l: 'Total Pagu Anggaran (DPA)', i: 'bank', v: rpS(a.pagu), title: rp(a.pagu), s: `${chip(a.n + ' Sub Kegiatan', 'slate')} Nilai kontrak ${rpS(a.nilaiKontrak)}` })}
       ${kpi({ l: 'Realisasi Keuangan', i: 'receipt', v: `${rpS(a.keu)}`, title: rp(a.keu), bar: a.keuPct, barCls: 'gold', tick: a.ren, s: `<b class="c-${a.keuPct - a.ren < -amb ? 'err' : 'ok'}">${pct(a.keuPct)}</b> dari pagu · target ${pct(a.ren, 0)}` })}
@@ -535,7 +537,7 @@ Pages.add({
     const evOf = (email, tw) => S.t.evaluasi.find((v) => norm(v.Email_Pejabat) === norm(email) && v.Triwulan === tw);
     const saya = S.t.evaluasi.filter((v) => norm(v.Email_Pejabat) === norm(S.me.email)).sort((a, b) => b.Triwulan - a.Triwulan);
     el.innerHTML = ph({ eyebrow: 'Monev Kinerja & Akuntabilitas Pelaksanaan', eyebrowIc: 'shield', title: 'Evaluasi Kinerja & Progres Anggaran Triwulanan',
-      desc: `Mekanisme pengawasan berjenjang (Kasi → Kabid → Sekretaris/Kadis) · Triwulan ${K.ROMAWI[st.tw]} TA ${esc(S.tahun)}`,
+      desc: `Mekanisme pengawasan berjenjang (Kasi → Kabid; Kadis/Sekretaris memantau lewat Halaman Progres) · Triwulan ${K.ROMAWI[st.tw]} TA ${esc(S.tahun)}`,
       acts: `${selectHtml('tw', [1, 2, 3, 4].map((t) => [t, 'Triwulan ' + K.ROMAWI[t]]), st.tw)}` }) + '<div id="evBody"></div>';
     const box = $('#evBody');
     let html = '';
@@ -584,9 +586,9 @@ Pages.add({
         <div class="card-f">${locked ? `<a class="btn block" href="#/laporan?tab=monev&p=${encodeURIComponent(email)}&tw=${tw}">${ic('print', 'sm')}Cetak Lembar Monev</a>` : `<button class="btn" data-ev="draf">${ic('save', 'sm')}Simpan Draf</button><button class="btn pri" data-ev="kunci" style="flex:1">${ic('verified', 'sm')}Kunci & Sahkan Evaluasi</button>`}</div></div></div>`;
   },
   matriks() {
-    const pej = S.t.pengguna.filter((u) => u.Role === 'PEJABAT' && u.Atasan_Email && u.Aktif !== 'TIDAK').sort(byKey('Nama'));
+    const pej = S.t.pengguna.filter((u) => u.Role === 'PEJABAT' && u.Aktif !== 'TIDAK' && dinilaiDiAplikasi(u)).sort(byKey('Nama'));
     const cel = (u, tw) => { const v = S.t.evaluasi.find((x) => norm(x.Email_Pejabat) === norm(u.Email) && x.Triwulan === tw); return `<td class="c">${v ? (v.Status === 'TERKUNCI' ? chip(K.PREDIKAT[v.Predikat] || '-', K.PRED_CHIP[v.Predikat]) : chip('Draf', 'warn')) : '<span class="c-mut">—</span>'}</td>`; };
-    return `<div class="card mb"><div class="card-h"><h3>${ic('table', 'sm')}Status evaluasi seluruh pejabat TA ${esc(S.tahun)}</h3><p>Pantauan Bagian Program/Admin — hanya atasan langsung yang dapat mengisi.</p></div>${pej.length ? `<div class="tw"><table class="t"><thead><tr><th>Pejabat</th><th>Penilai</th><th class="c">TW I</th><th class="c">TW II</th><th class="c">TW III</th><th class="c">TW IV</th><th></th></tr></thead><tbody>${pej.map((u) => `<tr><td><b>${esc(u.Nama)}</b><span class="sub">${esc(u.Jabatan || '')}</span></td><td>${esc(Store.nama(u.Atasan_Email))}</td>${[1, 2, 3, 4].map((t) => cel(u, t)).join('')}<td class="acts"><a class="btn ghost icon" title="Lembar Monev" href="#/laporan?tab=monev&p=${encodeURIComponent(u.Email)}">${ic('print', 'sm')}</a></td></tr>`).join('')}</tbody></table></div>` : emptyBox('Belum ada pejabat berjenjang', 'Atur atasan langsung di Manajemen User.')}</div>`;
+    return `<div class="card mb"><div class="card-h"><h3>${ic('table', 'sm')}Status evaluasi seluruh pejabat TA ${esc(S.tahun)}</h3><p>Pantauan Bagian Program/Admin — hanya atasan langsung yang dapat mengisi. Evaluasi berjenjang sampai Kepala Bidang; pejabat yang atasannya tidak terdaftar/nonaktif (mis. Kepala Dinas) tidak dinilai di aplikasi.</p></div>${pej.length ? `<div class="tw"><table class="t"><thead><tr><th>Pejabat</th><th>Penilai</th><th class="c">TW I</th><th class="c">TW II</th><th class="c">TW III</th><th class="c">TW IV</th><th></th></tr></thead><tbody>${pej.map((u) => `<tr><td><b>${esc(u.Nama)}</b><span class="sub">${esc(u.Jabatan || '')}</span></td><td>${esc(Store.nama(u.Atasan_Email))}</td>${[1, 2, 3, 4].map((t) => cel(u, t)).join('')}<td class="acts"><a class="btn ghost icon" title="Lembar Monev" href="#/laporan?tab=monev&p=${encodeURIComponent(u.Email)}">${ic('print', 'sm')}</a></td></tr>`).join('')}</tbody></table></div>` : emptyBox('Belum ada pejabat berjenjang', 'Atur atasan langsung di Manajemen User.')}</div>`;
   }
 });
 
@@ -1111,11 +1113,11 @@ Pages.add({
     const all = S.t.pengguna, aktif = all.filter((u) => u.Aktif !== 'TIDAK');
     const penilai = aktif.filter((u) => all.some((x) => norm(x.Atasan_Email) === norm(u.Email)));
     el.innerHTML = ph({ eyebrow: 'Tata Kelola Kepegawaian & Kewenangan', title: 'Manajemen User & Matriks Hak Akses (RBAC)', desc: 'Pengelolaan pengguna, pembagian peran, dan hierarki penilaian evaluasi kinerja berjenjang.', acts: `<button class="btn" data-act="import">${ic('upload', 'sm')}Import</button><button class="btn pri" data-act="add">${ic('add', 'sm')}Tambah Pengguna</button>` }) +
-      `<div class="grid g4 mb">${kpi({ l: 'Total pengguna', i: 'group', v: aktif.length + ' <small>aktif</small>', s: (all.length - aktif.length) + ' nonaktif' })}${kpi({ l: 'Pejabat penilai', i: 'medal', gold: true, v: penilai.length, s: 'memiliki bawahan langsung' })}${kpi({ l: 'Pejabat pelapor', i: 'person', v: aktif.filter((u) => u.Role === 'PEJABAT').length, s: 'Kasi, Kabid, Sekretaris, Kadis' })}${kpi({ l: 'Staf & Program', i: 'users', v: aktif.filter((u) => u.Role === 'STAF' || u.Role === 'PROGRAM').length, s: 'operator & monev' })}</div>
+      `<div class="grid g4 mb">${kpi({ l: 'Total pengguna', i: 'group', v: aktif.length + ' <small>aktif</small>', s: (all.length - aktif.length) + ' nonaktif' })}${kpi({ l: 'Pejabat penilai', i: 'medal', gold: true, v: penilai.length, s: 'memiliki bawahan langsung' })}${kpi({ l: 'Pejabat pelapor', i: 'person', v: aktif.filter((u) => u.Role === 'PEJABAT').length, s: 'Kasi & Kabid (Kadis/Sekretaris opsional)' })}${kpi({ l: 'Staf & Program', i: 'users', v: aktif.filter((u) => u.Role === 'STAF' || u.Role === 'PROGRAM').length, s: 'operator & monev' })}</div>
       <div class="card mb"><div class="filters"><div class="search">${ic('search')}<input class="in" name="cari" placeholder="Cari nama, NIP, atau email…" value="${esc(st.cari)}"></div>${selectHtml('role', [['', 'Semua Peran']].concat(Object.keys(K.ROLE).map((r) => [r, K.ROLE[r]])), st.role)}${selectHtml('bidang', optBidang(), st.bidang)}${selectHtml('akt', [['', 'Semua Status'], ['YA', 'Aktif'], ['TIDAK', 'Nonaktif']], st.akt)}<div class="row"><button class="btn sm ${st.view === 'tabel' ? 'pri' : ''}" data-v="tabel">${ic('table', 'sm')}Tabel</button><button class="btn sm ${st.view === 'pohon' ? 'pri' : ''}" data-v="pohon">${ic('tree', 'sm')}Struktur</button></div></div></div>
       <div class="card" id="tbl"></div>
       <div class="card mt"><div class="card-b row" style="align-items:flex-start;gap:16px"><div class="kpi-i gold">${ic('shield')}</div><div style="flex:1"><b class="strong">Matriks ketentuan hak akses</b><div class="grid g3 mt">
-        <div class="note info">${ic('medal', 'sm')}<div><b>Hierarki penilaian:</b> pejabat hanya dapat menilai bawahan langsungnya (kolom Atasan Langsung).</div></div><div class="note info">${ic('lock', 'sm')}<div><b>Integritas realisasi:</b> staf mengajukan; hanya PIC sub kegiatan yang memverifikasi.</div></div><div class="note info">${ic('key', 'sm')}<div>${Auth.cfg && Auth.cfg.loginSandi ? '<b>Kata sandi:</b> disimpan sebagai hash; admin hanya dapat me-reset, tidak dapat melihat.' : '<b>Login Google:</b> pegawai masuk dengan akun Google yang emailnya sama persis dengan kolom Email. Tidak ada kata sandi yang disimpan aplikasi.'}</div></div></div></div></div></div>`;
+        <div class="note info">${ic('medal', 'sm')}<div><b>Hierarki penilaian:</b> pejabat hanya dapat menilai bawahan langsungnya (kolom Atasan Langsung). Evaluasi berjenjang sampai <b>Kepala Bidang</b>: Kepala Dinas dan Sekretaris tidak perlu didaftarkan — mereka memantau lewat Halaman Progres. Untuk Kabid, kosongkan Atasan langsung.</div></div><div class="note info">${ic('lock', 'sm')}<div><b>Integritas realisasi:</b> staf mengajukan; hanya PIC sub kegiatan yang memverifikasi.</div></div><div class="note info">${ic('key', 'sm')}<div>${Auth.cfg && Auth.cfg.loginSandi ? '<b>Kata sandi:</b> disimpan sebagai hash; admin hanya dapat me-reset, tidak dapat melihat.' : '<b>Login Google:</b> pegawai masuk dengan akun Google yang emailnya sama persis dengan kolom Email. Tidak ada kata sandi yang disimpan aplikasi.'}</div></div></div></div></div></div>`;
     const roleChip = (r) => chip(K.ROLE[r] || r, r === 'ADMIN' ? 'navy' : r === 'PEJABAT' ? 'info' : r === 'PROGRAM' ? 'gold' : 'slate');
     const pw = !!(Auth.cfg && Auth.cfg.loginSandi);
     const draw = () => {
@@ -1152,7 +1154,7 @@ Pages.tampilSandi = function (u, sandi) {
 };
 Pages.formUser = function (u, prefill) {
   const baru = !u; u = Object.assign({ Role: 'STAF', Aktif: 'YA' }, u || {}, prefill || {});
-  const atasanOpts = [['', '— tidak ada (pimpinan tertinggi) —']].concat(S.t.pengguna.filter((x) => norm(x.Email) !== norm(u.Email) && x.Aktif !== 'TIDAK' && (x.Role === 'PEJABAT' || x.Role === 'ADMIN')).sort(byKey('Nama')).map((x) => [x.Email, x.Nama + (x.Jabatan ? ' — ' + x.Jabatan : '')]));
+  const atasanOpts = [['', '— tidak ada (Kabid/pimpinan; tidak dinilai di aplikasi) —']].concat(S.t.pengguna.filter((x) => norm(x.Email) !== norm(u.Email) && x.Aktif !== 'TIDAK' && (x.Role === 'PEJABAT' || x.Role === 'ADMIN')).sort(byKey('Nama')).map((x) => [x.Email, x.Nama + (x.Jabatan ? ' — ' + x.Jabatan : '')]));
   const m = modal({ title: baru ? 'Tambah Pengguna' : 'Ubah Pengguna', icon: 'users', body: `<form class="fg">${fld({ name: 'Email', label: 'Email akun Google', value: u.Email, type: 'email', span: 's6', req: true, ro: !baru, hint: 'Harus sama dengan email yang dipakai untuk login Google' })}${fld({ name: 'Nama', label: 'Nama lengkap & gelar', value: u.Nama, span: 's6', req: true })}
     ${fld({ name: 'NIP', label: 'NIP', value: u.NIP, span: 's6', max: 18, ph: '18 digit' })}${fld({ name: 'Jabatan', label: 'Jabatan', value: u.Jabatan, span: 's6', ph: 'Kepala Seksi …' })}
     ${fld({ name: 'Role', label: 'Peran sistem', type: 'select', value: u.Role, span: 's6', opts: Object.keys(K.ROLE).map((r) => [r, K.ROLE[r]]) })}${fld({ name: 'Bidang', label: 'Bidang (pembatas hak tulis)', type: 'select', value: u.Bidang, span: 's6', opts: [['', 'Semua bidang']].concat(Store.bidangList().map((b) => [b, b])) })}
@@ -1176,7 +1178,7 @@ Pages.add({
   render(el, q, st) {
     st.tab = q.tab || st.tab || 'umum';
     el.innerHTML = ph({ eyebrow: 'Administrasi Sistem', title: 'Pengaturan Aplikasi', desc: 'Identitas instansi, periode aktif, template dokumen, impor data, login Google, dan status kinerja server.' }) +
-      `<div class="card"><div class="tabs">${[['umum', 'settings', 'Umum'], ['template', 'docadd', 'Template Dokumen'], ['import', 'upload', 'Import Data'], ['keamanan', 'shield', 'Keamanan & Login'], ['sistem', 'speed', 'Status Sistem']].map((t) => `<button data-tab="${t[0]}" class="${st.tab === t[0] ? 'on' : ''}">${ic(t[1], 'sm')}${t[2]}</button>`).join('')}</div><div class="card-b" id="pgBody"></div></div>`;
+      `<div class="card"><div class="tabs">${[['umum', 'settings', 'Umum'], ['progres', 'eye', 'Halaman Progres'], ['template', 'docadd', 'Template Dokumen'], ['import', 'upload', 'Import Data'], ['keamanan', 'shield', 'Keamanan & Login'], ['sistem', 'speed', 'Status Sistem']].map((t) => `<button data-tab="${t[0]}" class="${st.tab === t[0] ? 'on' : ''}">${ic(t[1], 'sm')}${t[2]}</button>`).join('')}</div><div class="card-b" id="pgBody"></div></div>`;
     const b = $('#pgBody'); this[st.tab](b, st);
     el.onclick = (e) => { const t = e.target.closest('[data-tab]'); if (t) { st.tab = t.dataset.tab; history.replaceState(null, '', '#/pengaturan'); App.refresh(); } };
   },
@@ -1195,6 +1197,7 @@ Pages.add({
       const t = e.target.closest('[data-save]'); if (!t) return; const v = formVals($('#fSet')); if (v.MAKS_UNGGAH_MB > 25) { toast('Batas unggah maksimal 25 MB (keterbatasan Apps Script).', 'warn'); return; }
       const old = Object.assign({}, S.settings); mutate('pengaturan.simpan', v, { btn: t, optimistic: () => { Object.assign(S.settings, v); Store.bump(); Store.saveSoon(); return () => { S.settings = old; }; }, onOk: (d) => { if (d.settings) { S.settings = d.settings; App.chrome(); } }, okMsg: 'Pengaturan disimpan.' }); };
   },
+  progres(b) { Progres.pengaturan(b); },
   template(b) {
     const tps = S.t.template, JN = Gen.JENIS;
     const bw = Saran.BAWAAN, belum = bw.filter((x) => !Saran.terpasang(x[2]));
