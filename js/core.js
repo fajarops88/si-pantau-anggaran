@@ -4,9 +4,12 @@
    router hash, kalkulasi realisasi, grafik SVG, ekspor, utilitas UI.
    ===================================================================== */
 'use strict';
-const APP_VERSION = '1.4.1';
+const APP_VERSION = '1.4.2';
 /** Riwayat versi frontend (terbaru di atas) — tampil di menu Profil → Riwayat Versi */
 const FE_RIWAYAT = [
+  { versi: '1.4.2', tanggal: '2026-11-28', catatan: ['Checklist Kesiapan Audit: butir baru Penilaian kinerja Penyedia di sistem pengadaan secara elektronik (Perpres 16/2018 s.t.d.t.d. Perpres 46/2025 Pasal 11 ayat (1) huruf m; PerLKPP 3/2026 Lampiran I–III bab VIII). Untuk kontrak swakelola, tandai Tidak Perlu.',
+    'Master Checklist → Isi dasar regulasi terverifikasi menambahkan butir tersebut bila belum ada di master (dikenali dari jenis dokumennya, tidak ditambahkan dua kali), lalu klik Simpan Master.',
+    'Jenis dokumen arsip baru: Penilaian Kinerja Penyedia (mis. tangkapan layar hasil penilaian). Bila diunggah, butir checklist otomatis Lengkap.'] },
   { versi: '1.4.1', tanggal: '2026-11-28', catatan: ['Jaminan pelaksanaan dinilai untuk semua metode pemilihan (Perpres 16/2018 s.t.d.t.d. Perpres 46/2025 Pasal 33), bukan hanya E-purchasing: kontrak barang, pekerjaan konstruksi, dan jasa lainnya di atas Rp200 juta. Formulir dan detail kontrak menampilkan besarannya (5% nilai Kontrak, atau 5% HPS bila nilai kontrak di bawah 80% HPS; rancang dan bangun memakai pagu) dan masa berlakunya sampai serah terima.',
     'Dokumen Disarankan memuat Jaminan Pelaksanaan bila nilainya di atas Rp200 juta.',
     'Master Checklist → Isi dasar regulasi terverifikasi kini juga mengisi dasar untuk dokumen pemilihan & penetapan penyedia, jaminan pelaksanaan, SPMK, laporan progres, dokumentasi foto, BA pemeriksaan hasil pekerjaan, dan BAST (PerLKPP 3/2026 Lampiran I–III).',
@@ -52,7 +55,7 @@ const K = {
   ROMAWI: ['', 'I', 'II', 'III', 'IV'],
   JENIS: [['RKA_DPA', 'RKA / DPA'], ['HPS', 'HPS & Survei Harga'], ['PENETAPAN', 'Penetapan Penyedia'], ['SPK', 'SPK / Kontrak'],
     ['JAMINAN', 'Jaminan Pelaksanaan'], ['SPMK', 'SPMK'], ['LAPORAN', 'Laporan Progres'], ['FOTO', 'Dokumentasi Foto'],
-    ['BAPHP', 'BA Pemeriksaan Hasil Pekerjaan'], ['BAPP', 'BA Penyelesaian Pekerjaan (BAPP)'], ['INSTRUKSI', 'Instruksi PPK'], ['SPEK', 'Spesifikasi Teknis'], ['ANALISIS_PASAR', 'Analisis Pasar'], ['BAST', 'BAST'], ['SPM', 'SPM'], ['SP2D', 'SP2D'], ['PAJAK', 'Bukti Pajak'], ['LAINNYA', 'Lainnya']],
+    ['BAPHP', 'BA Pemeriksaan Hasil Pekerjaan'], ['BAPP', 'BA Penyelesaian Pekerjaan (BAPP)'], ['INSTRUKSI', 'Instruksi PPK'], ['SPEK', 'Spesifikasi Teknis'], ['ANALISIS_PASAR', 'Analisis Pasar'], ['BAST', 'BAST'], ['KINERJA', 'Penilaian Kinerja Penyedia'], ['SPM', 'SPM'], ['SP2D', 'SP2D'], ['PAJAK', 'Bukti Pajak'], ['LAINNYA', 'Lainnya']],
   PREDIKAT: { SANGAT_BERHASIL: 'Sangat Berhasil', BERHASIL: 'Berhasil', KURANG_BERHASIL: 'Kurang Berhasil', TIDAK_BERHASIL: 'Tidak Berhasil' },
   PRED_CHIP: { SANGAT_BERHASIL: 'info', BERHASIL: 'ok', KURANG_BERHASIL: 'warn', TIDAK_BERHASIL: 'err' },
   ST_KONTRAK: { DRAF: ['Draf', 'slate'], AKTIF: ['Aktif', 'ok'], SELESAI: ['Selesai', 'info'], PUTUS: ['Putus', 'err'], TERLAMBAT: ['Terlambat', 'err'] },
@@ -1005,6 +1008,7 @@ document.addEventListener('DOMContentLoaded', () => App.init());
    Perpres 16/2018 s.t.d.t.d. Perpres 46/2025: Pasal 26 ayat (7), Pasal 28, Pasal 33, Pasal 38.
    v1.4.1: jaminan pelaksanaan semua metode (Perpres Pasal 33) + besarannya; dasar checklist C03 & C05–C10;
    rujukan pemberian kesempatan & denda (Lampiran I butir 6.19–6.20, II 6.20–6.21, III 6.18–6.19).
+   v1.4.2: butir checklist penilaian kinerja Penyedia (Perpres Pasal 11 ayat (1) huruf m; PerLKPP 3/2026 Lampiran I–III bab VIII).
    Semua keluaran adalah PETUNJUK/peringatan untuk PPK; tidak memblokir simpan.
    ===================================================================== */
 const Aturan = {
@@ -1028,7 +1032,10 @@ const Aturan = {
     LAPORAN: { item: '', lama: '', dasar: 'Ketentuan Kontrak; PerLKPP 3/2026 Lampiran I butir 6.8 huruf d–e (cara & frekuensi pelaporan disepakati pada rapat persiapan pelaksanaan Kontrak) & 6.11; Lampiran II butir 6.11.1 huruf a angka 5 (laporan berkala pengawas); Lampiran III butir 6.17' },
     FOTO: { item: '', lama: '', dasar: 'Ketentuan Kontrak/permintaan pemeriksa — PerLKPP 3/2026 tidak mengatur dokumentasi foto progres secara khusus' },
     BAPHP: { item: '', lama: '', dasar: 'PerLKPP 3/2026 Lampiran I butir 7.1.1 huruf b–d, Lampiran II butir 7.1 huruf b–d (pemeriksaan hasil pekerjaan sebelum serah terima); Lampiran III butir 7.1 (syarat serah terima pertama)' },
-    BAST: { item: '', lama: '', dasar: 'PerLKPP 3/2026 Lampiran I butir 7.1.1 huruf e & 7.2 huruf h (serah terima akhir); Lampiran II & III butir 7.1 (serah terima pertama) & 7.3 (serah terima akhir); kepada PA/KPA: Lampiran I butir 7.1.2, Lampiran II & III butir 7.4' }
+    BAST: { item: '', lama: '', dasar: 'PerLKPP 3/2026 Lampiran I butir 7.1.1 huruf e & 7.2 huruf h (serah terima akhir); Lampiran II & III butir 7.1 (serah terima pertama) & 7.3 (serah terima akhir); kepada PA/KPA: Lampiran I butir 7.1.2, Lampiran II & III butir 7.4' },
+    /* v1.4.2: butir baru — bila master belum punya butir berjenis ini, tombol Isi dasar regulasi menambahkannya (baru = isi baris) */
+    KINERJA: { item: '', lama: '', dasar: 'Perpres 16/2018 s.t.d.t.d. Perpres 46/2025 Pasal 11 ayat (1) huruf m (PPK menilai kinerja Penyedia); PerLKPP 3/2026 Lampiran I, II & III bab VIII (PPK/pejabat penandatangan Kontrak wajib memberikan penilaian kinerja Penyedia dalam sistem pengadaan secara elektronik; tata cara mengikuti PerLKPP tentang Pembinaan Pelaku Usaha)',
+      baru: { Tahapan: 'Serah Terima', Item: 'Penilaian kinerja Penyedia di sistem pengadaan secara elektronik' } }
   },
   epur(metode) { return /purchasing|katalog/i.test(String(metode || '')); },
   /** v1.2.9: jasa konsultansi (nonkonstruksi atau konstruksi) */

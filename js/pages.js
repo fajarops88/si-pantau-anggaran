@@ -1139,13 +1139,20 @@ Pages.masterChecklist = function () {
   const m = modal({ title: 'Master Checklist Audit', icon: 'checklist', size: 'lg', body: `<div class="note warn mb">${ic('warn', 'sm')}<div>Lengkapi kolom <b>Dasar Regulasi</b> dengan pasal yang berlaku (Perpres PBJ & perubahannya, ketentuan pengelolaan keuangan daerah). Isi awal bersifat umum dan perlu diverifikasi bagian hukum/PBJ.</div></div><div class="tw"><table class="t light"><thead><tr><th>Urut</th><th>Tahapan</th><th>Item</th><th>Dasar regulasi</th><th>Jenis dokumen</th><th>Status</th><th></th></tr></thead><tbody id="mcBody">${rows.map(tr).join('')}</tbody></table></div><button class="btn sm mt" data-add>${ic('add', 'sm')}Tambah item</button> <button class="btn" data-isireg>${ic('check', 'sm')}Isi dasar regulasi terverifikasi</button>`,
     foot: `<button class="btn" data-x>Batal</button><button class="btn pri" data-save>${ic('save', 'sm')}Simpan Master</button>` });
   m.el.querySelector('[data-add]').onclick = () => m.el.querySelector('#mcBody').insertAdjacentHTML('beforeend', tr({ Aktif: 'YA', Jenis_Dokumen: 'LAINNYA' }, m.el.querySelectorAll('#mcBody tr').length));
-  /* v1.2.3: isi dasar regulasi yang sudah diverifikasi — hanya kolom yang masih kosong / "(lengkapi …)" */
+  /* v1.2.3: isi dasar regulasi yang sudah diverifikasi — hanya kolom yang masih kosong / "(lengkapi …)".
+     v1.4.2: butir baru (Aturan.CHECKLIST[jenis].baru) ditambahkan bila master belum punya baris berjenis itu (termasuk yang nonaktif).
+     Kode dikosongkan agar server memberi nomor berikutnya (C15 bisa sudah terpakai oleh butir tambahan admin). */
   const isiReg = m.el.querySelector('[data-isireg]');
-  if (isiReg) isiReg.onclick = () => { let n = 0;
+  if (isiReg) isiReg.onclick = () => { let n = 0, nb = 0; const body = m.el.querySelector('#mcBody');
     $$('#mcBody tr', m.el).forEach((t) => { const g = (c) => t.querySelector('[data-c="' + c + '"]'), a = Aturan.CHECKLIST[g('Jenis_Dokumen').value]; if (!a) return;
       const d = g('Dasar_Regulasi'); if (!d.value.trim() || /lengkapi/i.test(d.value)) { d.value = a.dasar; n++; }
       if (a.item && g('Item').value.trim() === a.lama) { g('Item').value = a.item; n++; } });
-    toast(n ? n + ' kolom diisi. Periksa lalu klik Simpan Master.' : 'Tidak ada kolom yang perlu diisi (sudah terisi manual).', n ? 'ok' : 'info'); };
+    const jenisAda = $$('#mcBody [data-c="Jenis_Dokumen"]', m.el).map((x) => x.value);
+    Object.keys(Aturan.CHECKLIST).forEach((j) => { const a = Aturan.CHECKLIST[j]; if (!a.baru || jenisAda.indexOf(j) > -1) return;
+      const urut = $$('#mcBody [data-c="Urutan"]', m.el).reduce((mx, x) => Math.max(mx, num(x.value)), 0) + 1, i = $$('#mcBody tr', m.el).length;
+      body.insertAdjacentHTML('beforeend', tr({ Urutan: urut, Tahapan: a.baru.Tahapan, Item: a.baru.Item, Dasar_Regulasi: a.dasar, Jenis_Dokumen: j, Aktif: 'YA', Kode: '' }, i));
+      body.lastElementChild.setAttribute('data-baru', j); nb++; });
+    toast(n || nb ? [n ? n + ' kolom diisi' : '', nb ? nb + ' butir baru ditambahkan' : ''].filter(Boolean).join(', ') + '. Periksa lalu klik Simpan Master.' : 'Tidak ada kolom yang perlu diisi (sudah terisi manual).', n || nb ? 'ok' : 'info'); };
   m.el.querySelector('[data-save]').onclick = (e) => {
     const items = $$('#mcBody tr', m.el).map((t) => { const o = {}; $$('[data-c]', t).forEach((i) => { o[i.dataset.c] = i.value.trim(); }); o.Urutan = num(o.Urutan); return o; }).filter((o) => o.Item);
     mutate('checklistMaster.simpan', { items }, { btn: e.target, onOk: (d) => { if (d.rows) { S.t.checklistMaster = d.rows.map(Store.normRow); Store.bump(); Store.save(); } m.close(); }, okMsg: 'Master checklist disimpan.' });
