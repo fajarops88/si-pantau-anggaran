@@ -4,9 +4,13 @@
    router hash, kalkulasi realisasi, grafik SVG, ekspor, utilitas UI.
    ===================================================================== */
 'use strict';
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.4.1';
 /** Riwayat versi frontend (terbaru di atas) — tampil di menu Profil → Riwayat Versi */
 const FE_RIWAYAT = [
+  { versi: '1.4.1', tanggal: '2026-11-28', catatan: ['Jaminan pelaksanaan dinilai untuk semua metode pemilihan (Perpres 16/2018 s.t.d.t.d. Perpres 46/2025 Pasal 33), bukan hanya E-purchasing: kontrak barang, pekerjaan konstruksi, dan jasa lainnya di atas Rp200 juta. Formulir dan detail kontrak menampilkan besarannya (5% nilai Kontrak, atau 5% HPS bila nilai kontrak di bawah 80% HPS; rancang dan bangun memakai pagu) dan masa berlakunya sampai serah terima.',
+    'Dokumen Disarankan memuat Jaminan Pelaksanaan bila nilainya di atas Rp200 juta.',
+    'Master Checklist → Isi dasar regulasi terverifikasi kini juga mengisi dasar untuk dokumen pemilihan & penetapan penyedia, jaminan pelaksanaan, SPMK, laporan progres, dokumentasi foto, BA pemeriksaan hasil pekerjaan, dan BAST (PerLKPP 3/2026 Lampiran I–III).',
+    'Kesiapan Audit: catatan kontrak terlambat dan BAST yang melewati akhir kontrak merujuk ketentuan pemberian kesempatan (paling lama 50 hari kalender lewat adendum) dan denda keterlambatan 1‰ per hari sesuai lampiran PerLKPP 3/2026.'] },
   { versi: '1.4.0', tanggal: '2026-11-28', catatan: ['Alur terhubung: Perencanaan → Pengadaan → Kontrak → Realisasi → Evaluasi → Kesiapan Audit. Pilihan aktif (Sub Kegiatan, rekening, paket, kontrak, bulan) tampil di atas tiap halaman, terbawa saat pindah menu, dan ada tombol Lanjut ke tahap berikutnya.',
     'Perencanaan: tabel rekening belanja → paket → kontrak → SP2D, dengan tombol Buat paket dari rekening. Pengadaan dan Kontrak menyaring daftar menurut Sub Kegiatan aktif; tautan paket membuka kontraknya langsung.',
     'Kontrak: tahapan pekerjaan (SPK, SPMK, pelaksanaan, BA pemeriksaan, BAST, selesai), progres fisik per bulan (Catat progres), dan Catat SP2D yang mengisi kontrak serta rekening paket. Fisik Sub Kegiatan dihitung otomatis dari progres kontrak, ditimbang nilai kontrak.',
@@ -392,8 +396,12 @@ const Calc = {
       const fisik = fk.bulan ? fk.fisik : (sk ? Calc.sk(sk, 12).fisik : 0);
       const bt = Calc.bayarTaut(k), bayar = bt.nilai, bayarPct = nilai ? bayar / nilai * 100 : 0, st = Calc.kontrakStatus(k), temuan = [];
       if (k.Status !== 'DRAF' && bayarPct > fisik + 0.5) temuan.push(['err', `Pembayaran ${pct(bayarPct)} melebihi progres fisik ${pct(fisik)}. Periksa dasar pembayaran (berita acara kemajuan pekerjaan).`]);
-      if (k.Tgl_BAST && k.Tgl_Selesai && k.Tgl_BAST > k.Tgl_Selesai) temuan.push(['warn', `BAST ${tgl(k.Tgl_BAST)} melewati akhir kontrak ${tgl(k.Tgl_Selesai)} (${daysBetween(k.Tgl_Selesai, k.Tgl_BAST)} hari). Periksa denda keterlambatan sesuai kontrak.`]);
-      if (!k.Tgl_BAST && st === 'TERLAMBAT') temuan.push(['warn', `Masa kontrak berakhir ${tgl(k.Tgl_Selesai)} (${daysBetween(k.Tgl_Selesai, todayISO())} hari lalu) dan BAST belum tercatat. Periksa pemberian kesempatan dan denda keterlambatan.`]);
+      /* v1.4.1: rujukan pemberian kesempatan & denda keterlambatan menurut lampiran PerLKPP 3/2026 */
+      const pq = k.ID_Paket ? Store.get('pengadaan', k.ID_Paket) : null, jn = pq ? pq.Jenis_Pengadaan : '', L = Aturan.lamp(jn, Aturan.rb(pq));
+      const denda = `denda keterlambatan 1‰ per hari dari harga Kontrak atau bagian Kontrak${L.L === 'II' ? ' (sebelum PPN)' : ''}`;
+      const kesempatan = `Bila Penyedia diberi kesempatan, adendumnya dibuat sebelum masa pelaksanaan berakhir (paling lama 50 hari kalender; jaminan pelaksanaan diperpanjang bila ada) dan dikenai ${denda} (${L.nama} butir ${L.kesempatan} & ${L.denda}${jn ? '' : '; jenis pengadaan tidak diketahui, dianggap Lampiran I'}).`;
+      if (k.Tgl_BAST && k.Tgl_Selesai && k.Tgl_BAST > k.Tgl_Selesai) temuan.push(['warn', `BAST ${tgl(k.Tgl_BAST)} melewati akhir kontrak ${tgl(k.Tgl_Selesai)} (${daysBetween(k.Tgl_Selesai, k.Tgl_BAST)} hari). Periksa adendum pemberian kesempatan dan ${denda} (${L.nama} butir ${L.kesempatan} & ${L.denda}).`]);
+      if (!k.Tgl_BAST && st === 'TERLAMBAT') temuan.push(['warn', `Masa kontrak berakhir ${tgl(k.Tgl_Selesai)} (${daysBetween(k.Tgl_Selesai, todayISO())} hari lalu) dan BAST belum tercatat. ${kesempatan}`]);
       if (k.Status === 'SELESAI' && !k.Tgl_BAST) temuan.push(['warn', 'Status Selesai tetapi tanggal BAST belum diisi di data kontrak.']);
       if (k.Status !== 'PUTUS' && k.Status !== 'SELESAI' && fisik >= 100 && !k.Tgl_BAST) temuan.push(['info', 'Fisik sudah 100% tetapi BAST belum tercatat.']);
       if (k.Status === 'PUTUS') temuan.push(['warn', `Kontrak diputus: prestasi fisik ${pct(fisik)}, dibayar ${pct(bayarPct)}. Pastikan pembayaran sesuai prestasi dan sanksi sudah diproses.`]);
@@ -994,7 +1002,9 @@ document.addEventListener('DOMContentLoaded', () => App.init());
    ATURAN PBJ — v1.2.9: dicocokkan dengan naskah PerLKPP 2/2026 (Katalog Elektronik, seluruh pasal) dan
    PerLKPP 3/2026 (Pasal 2, 10–12; Lampiran I barang/jasa lainnya & konsultansi nonkonstruksi, Lampiran II
    konstruksi & konsultansi konstruksi, Lampiran III konstruksi terintegrasi rancang dan bangun).
-   Perpres 16/2018 s.t.d.t.d. Perpres 46/2025: Pasal 26 ayat (7), Pasal 28, Pasal 38.
+   Perpres 16/2018 s.t.d.t.d. Perpres 46/2025: Pasal 26 ayat (7), Pasal 28, Pasal 33, Pasal 38.
+   v1.4.1: jaminan pelaksanaan semua metode (Perpres Pasal 33) + besarannya; dasar checklist C03 & C05–C10;
+   rujukan pemberian kesempatan & denda (Lampiran I butir 6.19–6.20, II 6.20–6.21, III 6.18–6.19).
    Semua keluaran adalah PETUNJUK/peringatan untuk PPK; tidak memblokir simpan.
    ===================================================================== */
 const Aturan = {
@@ -1011,7 +1021,14 @@ const Aturan = {
       dasar: 'Perpres 16/2018 s.t.d.t.d. Perpres 46/2025 Pasal 26; PerLKPP 2/2026 Pasal 13 (E-purchasing: Referensi Harga ≤ Rp100 juta, HPS > Rp100 juta)' },
     SPK: { item: 'Kontrak sesuai bentuknya (bukti pembelian/kuitansi/SPK/surat perjanjian; E-purchasing: Surat/Bukti Pesanan elektronik)', lama: 'SPK / Surat Perjanjian bermeterai, ditandatangani basah kedua pihak',
       dasar: 'Perpres 16/2018 s.t.d.t.d. Perpres 46/2025 Pasal 28; PerLKPP 2/2026 Pasal 19 (Surat/Bukti Pesanan ditandatangani elektronik)' },
-    JAMINAN: { item: '', lama: '', dasar: 'PerLKPP 2/2026 Pasal 20 (E-purchasing, nilai kontrak > Rp200 juta); metode lain: lengkapi pasal Perpres' }
+    /* v1.4.1: dasar C03, C05–C10 dicocokkan dengan naskah Perpres 46/2025 & PerLKPP 3/2026 */
+    PENETAPAN: { item: '', lama: '', dasar: 'PerLKPP 3/2026 Lampiran I–III bab III–V (pemilihan Penyedia) & butir 6.1–6.2 (reviu BA hasil pemilihan, surat penunjukan Penyedia); E-purchasing: PerLKPP 2/2026 Pasal 14–17' },
+    JAMINAN: { item: '', lama: '', dasar: 'Perpres 16/2018 s.t.d.t.d. Perpres 46/2025 Pasal 33 (kontrak barang/pekerjaan konstruksi/jasa lainnya > Rp200 juta, semua metode; 5% nilai Kontrak, atau 5% HPS bila penawaran < 80% HPS; berlaku sampai serah terima); E-purchasing: PerLKPP 2/2026 Pasal 20' },
+    SPMK: { item: '', lama: '', dasar: 'PerLKPP 3/2026 Lampiran I butir 6.5 (SPMK/Surat Perintah Pengiriman paling lambat 14 hari kalender setelah kontrak), Lampiran II butir 6.5, Lampiran III butir 6.6' },
+    LAPORAN: { item: '', lama: '', dasar: 'Ketentuan Kontrak; PerLKPP 3/2026 Lampiran I butir 6.8 huruf d–e (cara & frekuensi pelaporan disepakati pada rapat persiapan pelaksanaan Kontrak) & 6.11; Lampiran II butir 6.11.1 huruf a angka 5 (laporan berkala pengawas); Lampiran III butir 6.17' },
+    FOTO: { item: '', lama: '', dasar: 'Ketentuan Kontrak/permintaan pemeriksa — PerLKPP 3/2026 tidak mengatur dokumentasi foto progres secara khusus' },
+    BAPHP: { item: '', lama: '', dasar: 'PerLKPP 3/2026 Lampiran I butir 7.1.1 huruf b–d, Lampiran II butir 7.1 huruf b–d (pemeriksaan hasil pekerjaan sebelum serah terima); Lampiran III butir 7.1 (syarat serah terima pertama)' },
+    BAST: { item: '', lama: '', dasar: 'PerLKPP 3/2026 Lampiran I butir 7.1.1 huruf e & 7.2 huruf h (serah terima akhir); Lampiran II & III butir 7.1 (serah terima pertama) & 7.3 (serah terima akhir); kepada PA/KPA: Lampiran I butir 7.1.2, Lampiran II & III butir 7.4' }
   },
   epur(metode) { return /purchasing|katalog/i.test(String(metode || '')); },
   /** v1.2.9: jasa konsultansi (nonkonstruksi atau konstruksi) */
@@ -1026,9 +1043,9 @@ const Aturan = {
   lamp(jenis, rb) {
     const L = rb ? 'III' : (jenis === 'KONSTRUKSI' || jenis === 'KONSULTANSI_KONSTRUKSI') ? 'II' : 'I';
     const B = {
-      I: { spes: '2.1', harga: '2.2', bentuk: '2.3.4', tunjuk: '6.1–6.2', kontrak: '6.3', lokasi: '6.4', spmk: '6.5', bast: '7.1', akhir: '7.2', jam: '7.2 huruf j', pl: '5.3.3', pel: '1.4' },
-      II: { spes: '2.1', harga: '2.2', bentuk: '2.3.4', tunjuk: '6.1–6.2', kontrak: '6.3', lokasi: '6.4', spmk: '6.5', bast: '7.1', akhir: '7.2 & 7.3', jam: '7.2 huruf j', pl: '5.3.3', pel: '1.4' },
-      III: { spes: '2.1', harga: '2.2', bentuk: '2.3.2.2', tunjuk: '6.1–6.2', kontrak: '6.3–6.4', lokasi: '6.5', spmk: '6.6', bast: '7.1', akhir: '7.2 & 7.3', jam: '7.2 huruf k', pl: '', pel: '1.4' }
+      I: { spes: '2.1', harga: '2.2', bentuk: '2.3.4', tunjuk: '6.1–6.2', kontrak: '6.3', lokasi: '6.4', spmk: '6.5', bast: '7.1', akhir: '7.2', jam: '7.2 huruf j', pl: '5.3.3', pel: '1.4', kesempatan: '6.19', denda: '6.20' },
+      II: { spes: '2.1', harga: '2.2', bentuk: '2.3.4', tunjuk: '6.1–6.2', kontrak: '6.3', lokasi: '6.4', spmk: '6.5', bast: '7.1', akhir: '7.2 & 7.3', jam: '7.2 huruf j', pl: '5.3.3', pel: '1.4', kesempatan: '6.20', denda: '6.21' },
+      III: { spes: '2.1', harga: '2.2', bentuk: '2.3.2.2', tunjuk: '6.1–6.2', kontrak: '6.3–6.4', lokasi: '6.5', spmk: '6.6', bast: '7.1', akhir: '7.2 & 7.3', jam: '7.2 huruf k', pl: '', pel: '1.4', kesempatan: '6.18', denda: '6.19' }
     }[L];
     return Object.assign({ L, nama: 'PerLKPP 3/2026 Lampiran ' + L }, B);
   },
@@ -1064,12 +1081,31 @@ const Aturan = {
     if (n <= 200e6) return o('Surat Perintah Kerja (SPK)', '(4)');
     return o('Surat perjanjian', '(5)');
   },
-  /** Jaminan pelaksanaan — hanya ketentuan E-purchasing (PerLKPP 2/2026 Pasal 20: barang/pekerjaan konstruksi/jasa lainnya) */
-  jaminan(nilai, jenis, metode) {
-    if (!this.epur(metode) || this.kons(jenis) || !(num(nilai) > 0)) return null;
-    return num(nilai) > 200e6
-      ? { wajib: true, teks: 'Jaminan pelaksanaan diberlakukan (nilai kontrak di atas Rp200 juta), kecuali jasa lainnya yang aset Penyedia dikuasai pengguna.', dasar: 'PerLKPP 2/2026 Pasal 20' }
-      : { wajib: false, teks: 'PerLKPP 2/2026 memberlakukan jaminan pelaksanaan E-purchasing hanya untuk nilai kontrak di atas Rp200 juta.', dasar: 'PerLKPP 2/2026 Pasal 20 ayat (1)' };
+  /** v1.4.1: jaminan pelaksanaan untuk SEMUA metode pemilihan Penyedia — Perpres 16/2018 s.t.d.t.d. Perpres 46/2025 Pasal 33
+      (E-purchasing juga PerLKPP 2/2026 Pasal 20). Kontrak barang/pekerjaan konstruksi/jasa lainnya di atas Rp200 juta;
+      jasa konsultansi, swakelola, dan metode "Lainnya" tidak dinilai (null).
+      Besaran (Pasal 33 ayat (3)–(4)): penawaran 80–100% HPS → 5% nilai Kontrak; di bawah 80% HPS → 5% HPS
+      (pekerjaan terintegrasi/rancang dan bangun: pagu anggaran). Aturannya memakai nilai penawaran; di sini nilai kontrak
+      dipakai sebagai pendekatan. Masa berlaku sampai serah terima (konstruksi: serah terima pertama) — ayat (5).
+      p = paket (opsional) untuk HPS/pagu. Hasil { wajib, besar, basis: 'KONTRAK'|'HPS'|'PAGU'|'', masa, rincian, teks, dasar }. */
+  jaminan(nilai, jenis, metode, p) {
+    const n = num(nilai), m = String(metode || '');
+    if (!(n > 0) || this.kons(jenis) || /swakelola|lainnya/i.test(m)) return null;
+    const P = this.PERPRES + ' Pasal 33', ep = this.epur(m);
+    if (n <= 200e6) return { wajib: false, besar: 0, basis: '', masa: '', rincian: '', teks: 'Jaminan pelaksanaan tidak disyaratkan: nilai kontrak paling banyak Rp200 juta.',
+      dasar: P + ' ayat (1)' + (ep ? '; PerLKPP 2/2026 Pasal 20 ayat (1)' : '') };
+    const rb = this.rb(p), acuan = p ? (rb ? num(p.Pagu_Paket) : num(p.Nilai_HPS)) : 0, nmA = rb ? 'pagu anggaran' : 'HPS';
+    let besar = Math.round(n * 0.05), basis = 'KONTRAK', bes;
+    if (acuan > 0) {
+      const r = n / acuan * 100;
+      if (r < 80) { besar = Math.round(acuan * 0.05); basis = rb ? 'PAGU' : 'HPS'; bes = 'Besarnya 5% dari ' + nmA + ' = ' + rp(besar) + ' (nilai kontrak ' + fmtN(r, 1) + '% dari ' + nmA + ', di bawah 80%).'; }
+      else bes = 'Besarnya 5% dari nilai Kontrak = ' + rp(besar) + ' (nilai kontrak ' + fmtN(r, 1) + '% dari ' + nmA + ').';
+    } else bes = 'Besarnya 5% dari nilai Kontrak = ' + rp(besar) + ' bila penawaran 80–100% ' + nmA + '; bila di bawah 80%, 5% dari ' + nmA + ' (' + nmA + ' paket belum tercatat).';
+    const kec = jenis === 'JASA_LAINNYA' || !jenis ? ' Tidak diperlukan untuk jasa lainnya yang aset Penyedia dikuasai pengguna.' : '';
+    const masa = 'Berlaku sampai serah terima ' + (jenis === 'KONSTRUKSI' ? 'pertama pekerjaan konstruksi.' : 'pekerjaan.');
+    return { wajib: true, besar, basis, masa, rincian: bes + kec,
+      teks: 'Jaminan pelaksanaan diberlakukan (nilai kontrak di atas Rp200 juta). ' + masa + ' ' + bes + kec + (jenis ? '' : ' Jenis pengadaan belum diketahui, dianggap Barang/Jasa Lainnya.'),
+      dasar: P + ' ayat (1), (' + (rb ? 4 : 3) + ') & (5)' + (kec ? ', ayat (2) huruf a' : '') + (ep ? '; PerLKPP 2/2026 Pasal 20' : '') };
   },
   /** v1.2.6/v1.2.9: batas nilai Pengadaan Langsung. Barang/Jasa Lainnya ≤ Rp200 juta, Konstruksi ≤ Rp400 juta, Konsultansi ≤ Rp100 juta;
       Papua (Pengaturan WILAYAH_PAPUA = YA): ≤ Rp1 miliar, konsultansi ≤ Rp200 juta (PerLKPP 3/2026 butir 1.4 huruf b & 5.3.3). */
@@ -1167,7 +1203,7 @@ const Aturan = {
   },
   /** Ringkasan aturan kontrak untuk ditampilkan (HTML). p = paket tertaut (opsional). */
   kontrakHtml(nilai, jenis, metode, p) {
-    const b = this.bentukKontrak(nilai, jenis, metode, p), j = this.jaminan(nilai, jenis, metode), bm = this.batasMetode(nilai, jenis, metode);
+    const b = this.bentukKontrak(nilai, jenis, metode, p), j = this.jaminan(nilai, jenis, metode, p), bm = this.batasMetode(nilai, jenis, metode);
     if (!b && !j && !bm) return '';
     const info = b || j ? `<div class="note info" data-aturan>${ic('info', 'sm')}<div>${b ? `Bentuk kontrak: <b>${esc(b.bentuk)}</b>${b.ket ? ' — ' + esc(b.ket) : ''} <span class="mini">(${esc(b.dasar)})</span>` : ''}${j ? `${b ? '<br>' : ''}${esc(j.teks)} <span class="mini">(${esc(j.dasar)})</span>` : ''}</div></div>` : '';
     return (bm ? `<div class="note warn${info ? ' mb-s' : ''}" data-batasmetode>${ic('warn', 'sm')}<div>${esc(bm.teks)} <span class="mini">(${esc(bm.dasar)})</span></div></div>` : '') + info;
@@ -1224,6 +1260,10 @@ const Aturan = {
     if (bk) out.bentuk = bk;
     if (!ep && (sp || pj)) add({ kode: 'PENUNJUKAN', tahap: 'Penunjukan & Kontrak', nama: 'Surat Penunjukan Penyedia (SPPBJ)', jenis: 'PENUNJUKAN', arsip: 'PENETAPAN', status: pl ? 'disarankan' : 'wajib',
       dasar: L + ' butir ' + B.tunjuk + (pl && B.pl ? ' & ' + B.pl : ''), ket: 'Paling lambat 5 hari kerja setelah BA hasil pemilihan; tanggal kontrak tidak boleh mendahului surat ini.' + (pl ? ' Untuk Pengadaan Langsung, BA hasil pemilihan = berita acara hasil pengadaan langsung yang dilaporkan Pejabat Pengadaan kepada PPK.' : '') });
+    /* v1.4.1: jaminan pelaksanaan semua metode (Perpres Pasal 33), sebelum dokumen kontrak */
+    const jm = this.jaminan(nilai, jenis, metode, p), l1 = B.L === 'I' && !ep;
+    if (jm && jm.wajib) add({ kode: 'JAMINAN', tahap: 'Penunjukan & Kontrak', nama: 'Jaminan Pelaksanaan', jenis: '', arsip: 'JAMINAN', dasar: jm.dasar + (l1 ? '; ' + L + ' butir 6.3.1 huruf h' : ''),
+      ket: (k ? '' : 'Perkiraan dari nilai HPS/pagu paket. ') + jm.masa + ' ' + jm.rincian + (l1 ? ' PPK meminta Penyedia menyerahkan jaminan yang sah sebelum kontrak ditandatangani.' : '') + ' Dokumen dari penerbit jaminan — tidak memerlukan template.' });
     if (ep) {
       add({ kode: 'SURAT_PESANAN', tahap: 'Penunjukan & Kontrak', nama: 'Surat/Bukti Pesanan e-Katalog', jenis: 'SURAT_PESANAN', arsip: 'SPK', dasar: this.PERPRES + ' Pasal 28 ayat (6); PerLKPP 2/2026 Pasal 19', ket: 'Yang sah ditandatangani PPK dan Penyedia secara elektronik di sistem Katalog Elektronik; draf di sini untuk arsip internal.' });
       add({ kode: 'BAPP', tahap: 'Pelaksanaan', nama: 'BA Penyelesaian Pekerjaan (BAPP) per termin', jenis: 'BAPP', arsip: 'BAPP', status: 'disarankan', dasar: 'Kebutuhan pembayaran per termin (draf internal)',
