@@ -113,12 +113,14 @@ const DpaPilih = {
     const sel = box.querySelector('select'), hint = box.querySelector('.hint');
     let rows; try { rows = await RB.ambil(idSk); } catch (e) { if (box.dataset.tok === tok) { sel.innerHTML = '<option value="">Rincian DPA gagal dimuat</option>'; hint.textContent = e.message + ' Ketik manual.'; } return; }
     if (box.dataset.tok !== tok) return;
-    const grup = this.susun(rows), semua = [];
+    let grup = this.susun(rows); const semua = [];
+    const nRutin = opt.saringRutin ? grup.filter((g) => Rutin.cocok(g.kode, g.nama)).length : 0;   // v1.3.0: belanja rutin tidak dijadikan paket
+    if (nRutin) grup = grup.filter((g) => !Rutin.cocok(g.kode, g.nama));
     if (!grup.length) { sel.innerHTML = '<option value="">Rincian DPA belum diimpor</option>'; hint.innerHTML = 'Impor PDF "RKA/DPA Rincian Belanja" dari SIPD-RI untuk Sub Kegiatan ini di menu Perencanaan Anggaran, atau ketik manual di bawah.'; return; }
     const pakai = opt.pakai || new Set();
     sel.innerHTML = '<option value="">— pilih uraian rekening atau rincian di bawahnya —</option>' + grup.map((g) => `<optgroup label="${esc(g.kode + ' · ' + this.pot(g.nama || 'Rekening', 90))}">${g.opsi.map((o) => { semua.push(o); return `<option value="${semua.length - 1}">${esc((pakai.has(norm(o.uraian)) ? '✓ ' : '') + this.label(o))}</option>`; }).join('')}</optgroup>`).join('');
     sel.disabled = false;
-    const dasar = grup.length + ' rekening · ' + semua.length + ' uraian' + ([...pakai].some((u) => semua.some((o) => norm(o.uraian) === u)) ? ' · ✓ = ' + (opt.labelPakai || 'sudah dipakai') : '');
+    const dasar = grup.length + ' rekening · ' + semua.length + ' uraian' + ([...pakai].some((u) => semua.some((o) => norm(o.uraian) === u)) ? ' · ✓ = ' + (opt.labelPakai || 'sudah dipakai') : '') + (nRutin ? ' · ' + nRutin + ' rekening belanja rutin disembunyikan (Pengaturan → Umum)' : '');
     const tampil = () => {
       const t = norm(opt.input.value), i = t ? semua.findIndex((o) => norm(o.uraian) === t) : -1;
       sel.value = i > -1 ? String(i) : '';
@@ -191,7 +193,7 @@ Pages.add({
     const beda = num(s.Pagu_Sebelum) ? num(s.Pagu) - num(s.Pagu_Sebelum) : 0, bisaPaket = Can.role('ADMIN', 'PEJABAT', 'STAF') && Can.bidangOk(s.Bidang);
     st.mode = st.mode || 'semua';
     el.innerHTML = `<div class="row mb-s no-print"><a class="btn sm ghost" href="#/perencanaan">${ic('left', 'sm')}Daftar sub kegiatan</a></div>` +
-      ph({ eyebrow: 'Rincian Anggaran Belanja Sub Kegiatan' + (s.Tahap_Anggaran ? ' · ' + s.Tahap_Anggaran : ''), eyebrowIc: 'wallet', title: s.Nama_SubKegiatan,
+      ph({ eyebrow: 'Rincian Anggaran Belanja Sub Kegiatan' + (s.Jenis_Versi ? ' · ' + K.VERSI[s.Jenis_Versi] + (s.Tgl_Penetapan ? ' (ditetapkan ' + tglP(s.Tgl_Penetapan) + ')' : '') : s.Tahap_Anggaran ? ' · ' + s.Tahap_Anggaran : ''), eyebrowIc: 'wallet', title: s.Nama_SubKegiatan,
         desc: `<span class="mono">${esc(s.Kode_SubKeg)}</span> · ${esc(s.Bidang || 'bidang belum diisi')} · PIC ${esc(pic.Nama || '—')}${isContoh(s.ID_SubKeg) ? ' · ' + chip('Data contoh', 'slate') : ''}`,
         acts: `<button class="btn" data-act="xlsRb">${ic('excel', 'sm')}Export rincian</button>${bisaPaket ? `<button class="btn" data-act="paket">${ic('gavel', 'sm')}Buat paket pengadaan</button>` : ''}${Can.editPlan() ? `<button class="btn" data-act="imp">${ic('upload', 'sm')}Impor ulang PDF SIPD</button><button class="btn pri" data-act="ubah">${ic('edit', 'sm')}Ubah</button>` : ''}` }) +
       `<div class="grid g4 mb">${kpi({ l: 'Alokasi ' + th, i: 'bank', v: rpS(s.Pagu), title: rp(s.Pagu), s: num(s.Pagu_Sebelum) ? 'Sebelum perubahan ' + rpS(s.Pagu_Sebelum) + ' (' + (beda >= 0 ? '+' : '−') + rpS(Math.abs(beda)) + ')' : 'Pagu sub kegiatan' })}
@@ -206,6 +208,7 @@ Pages.add({
         <div class="card"><div class="card-h"><h3>${ic('verified', 'sm')}Indikator & tolok ukur kinerja</h3></div><div class="tw"><table class="t light"><thead><tr><th>Indikator</th><th>Tolok ukur kinerja</th><th>Target kinerja</th></tr></thead><tbody>
         ${[['Capaian Program', (s.Capaian_Program || '').split(' — ')[0], (s.Capaian_Program || '').split(' — ')[1]], ['Masukan', 'Dana yang dibutuhkan', rp(s.Pagu)], ['Keluaran', s.Indikator, (s.Target !== '' ? fmtN(s.Target, 2).replace(/,00$/, '') + ' ' : '') + (s.Satuan || '')], ['Hasil', (s.Hasil || '').split(' — ')[0], (s.Hasil || '').split(' — ')[1]]]
           .map((r) => `<tr><td><b>${r[0]}</b></td><td>${esc(r[1] || '-')}</td><td>${esc(r[2] || '-')}</td></tr>`).join('')}</tbody></table></div></div></div>
+      ${Pages.versiCard(s)}
       <div class="card"><div class="card-h"><h3>${ic('table', 'sm')}Rincian Anggaran Belanja Sub Kegiatan</h3><div class="row" style="margin-left:auto">${[['semua', 'Semua baris'], ['rek', 'Rekening'], ['item', 'Item belanja']].map((m) => `<button class="btn sm ${st.mode === m[0] ? 'pri' : ''}" data-mode="${m[0]}">${m[1]}</button>`).join('')}</div></div><div id="rbBox"><div class="card-b">${'<div class="sk" style="margin:10px 0"></div>'.repeat(5)}</div></div></div>`;
     let rows = null;
     const draw = () => {
@@ -226,6 +229,7 @@ Pages.add({
     };
     RB.ambil(s.ID_SubKeg).then((r) => { rows = r; draw(); }, (e) => { const box = $('#rbBox'); if (box) box.innerHTML = `<div class="card-b"><div class="note err">${ic('warn', 'sm')}<div>${esc(e.message)}</div></div></div>`; });
     el.onclick = (e) => {
+      const vb = e.target.closest('[data-versi]'); if (vb) { Pages.lihatVersi(vb.dataset.versi); return; }
       const t = e.target.closest('[data-act],[data-mode]'); if (!t) return;
       if (t.dataset.mode) { st.mode = t.dataset.mode; $$('[data-mode]', el).forEach((b) => b.classList.toggle('pri', b.dataset.mode === st.mode)); if (rows) draw(); return; }
       const a = t.dataset.act;
@@ -240,6 +244,24 @@ Pages.add({
     };
   }
 });
+/** v1.3.0: riwayat versi penetapan DPA (Murni → Pergeseran → Perubahan) */
+Pages.versiCard = function (s) {
+  const vs = S.t.versiAnggaran.filter((v) => v.ID_SubKeg === s.ID_SubKeg).sort((a, b) => num(b.Urutan) - num(a.Urutan));
+  if (!vs.length) return `<div class="note info mb">${ic('info', 'sm')}<div>Riwayat versi DPA belum tercatat untuk Sub Kegiatan ini. Versi tercatat mulai impor DPA berikutnya (Pengaturan atau tombol Impor ulang PDF SIPD: pilih Murni, Pergeseran, atau Perubahan).</div></div>`;
+  return `<div class="card mb"><div class="card-h"><h3>${ic('review', 'sm')}Riwayat versi DPA (${vs.length})</h3><p>Setiap penetapan disimpan; rincian versi lama dapat dilihat kembali.</p></div><div class="tw"><table class="t light"><thead><tr><th>#</th><th>Versi</th><th>Tanggal penetapan</th><th>Nomor dokumen</th><th class="n">Pagu</th><th class="n">Pagu sebelum</th><th>Status</th><th>Diimpor</th><th></th></tr></thead><tbody>
+    ${vs.map((v) => `<tr><td>${esc(v.Urutan)}</td><td><b>${esc(K.VERSI[v.Jenis] || v.Jenis)}</b>${v.Catatan ? `<span class="sub">${esc(DpaPilih.pot(v.Catatan, 90))}</span>` : ''}</td><td>${v.Tgl_Penetapan ? tgl(v.Tgl_Penetapan) : '-'}</td><td class="mini">${esc(v.No_Dokumen || '-')}</td><td class="n">${fmtN(v.Pagu)}</td><td class="n mini">${v.Pagu_Sebelum === '' || v.Pagu_Sebelum == null ? '' : fmtN(v.Pagu_Sebelum)}</td><td>${stChip(K.ST_VERSI, v.Status)}</td><td class="mini">${esc(v.Diimpor_Oleh ? Store.nama(v.Diimpor_Oleh) : '-')}<span class="sub">${esc(String(v.Tgl_Impor || '').slice(0, 10))}</span></td><td>${v.Status !== 'AKTIF' ? `<button class="btn sm" data-versi="${esc(v.ID_Versi)}">Lihat rincian</button>` : ''}</td></tr>`).join('')}</tbody></table></div></div>`;
+};
+Pages.lihatVersi = async function (id) {
+  const v = Store.get('versiAnggaran', id) || {};
+  const m = modal({ title: (K.VERSI[v.Jenis] || 'Versi') + ' · ' + (v.Kode_SubKeg || ''), icon: 'review', size: 'lg', body: '<div class="sk" style="margin:10px 0"></div><div class="sk"></div>' });
+  const r = await api('versi.rincian', { ID_Versi: id }, { quiet: true });
+  if (!r.success) { m.body.innerHTML = `<div class="note err">${ic('warn', 'sm')}<div>${esc(r.message)}</div></div>`; return; }
+  const rows = r.data.r.map((x) => { const o = {}; r.data.h.forEach((k, i) => { o[k] = x[i]; }); return o; });
+  const lv = (k) => String(k || '').split('.').length;
+  m.body.innerHTML = `<p class="mini" style="margin:0 0 8px">Ditetapkan ${v.Tgl_Penetapan ? tglP(v.Tgl_Penetapan) : '-'} · pagu ${rp(v.Pagu)} · ${rows.length} baris (rekening & item)</p><div class="tw" style="max-height:60vh;overflow:auto"><table class="t rb"><thead><tr><th>Kode rekening</th><th>Uraian</th><th>Koefisien</th><th class="n">Jumlah (Rp)</th></tr></thead><tbody>
+    ${rows.filter((x) => x.Jenis === 'REK' || x.Jenis === 'ITEM').map((x) => x.Jenis === 'REK' ? `<tr class="${lv(x.Kode_Rekening) <= 3 ? 'lv1' : lv(x.Kode_Rekening) <= 5 ? 'lv2' : 'lv3'}"><td class="mono">${esc(x.Kode_Rekening)}</td><td colspan="2"><b>${esc(x.Uraian)}</b></td><td class="n"><b>${fmtN(x.Jumlah, 2).replace(/,00$/, '')}</b></td></tr>`
+      : `<tr><td></td><td>${esc(x.Uraian)}</td><td>${esc(x.Koefisien || '')}</td><td class="n">${fmtN(x.Jumlah, 2).replace(/,00$/, '')}</td></tr>`).join('')}</tbody></table></div>`;
+};
 Pages.formSubkeg = function (s, prefill) {
   const baru = !s; s = Object.assign({ Tahun: S.tahun, Rencana_TW1: 25, Rencana_TW2: 50, Rencana_TW3: 75, Rencana_TW4: 100, Sumber_Dana: 'APBD' }, s || {}, prefill || {});
   const progs = [...new Set(S.t.subkeg.map((x) => x.Kode_Program + '|' + x.Nama_Program))];
@@ -250,7 +272,7 @@ Pages.formSubkeg = function (s, prefill) {
       ${fld({ name: 'Kode_SubKeg', label: 'Kode Sub Kegiatan', value: s.Kode_SubKeg, span: 's4', req: true, ph: '2.15.03.2.12.0004' })}${fld({ name: 'Nama_SubKegiatan', label: 'Nama Sub Kegiatan', value: s.Nama_SubKegiatan, span: 's8', req: true })}
       <div class="sect">Target & Anggaran</div>
       ${fld({ name: 'Indikator', label: 'Indikator Kinerja', value: s.Indikator, span: 's6', type: 'textarea', rows: 2 })}${fld({ name: 'Target', label: 'Target', value: s.Target, span: 's3', type: 'num' })}${fld({ name: 'Satuan', label: 'Satuan', value: s.Satuan, span: 's3', ph: 'Paket / Unit / Dokumen' })}
-      ${fld({ name: 'Pagu', label: 'Pagu Anggaran', value: s.Pagu, span: 's6', type: 'rp', req: true })}${fld({ name: 'Sumber_Dana', label: 'Sumber Dana', value: s.Sumber_Dana, span: 's6' })}
+      ${fld({ name: 'Pagu', label: 'Pagu Anggaran', value: s.Pagu, span: 's6', type: 'rp', req: true, ro: !!s.ID_Versi, hint: s.ID_Versi ? 'Mengikuti ' + esc(K.VERSI[s.Jenis_Versi] || 'DPA') + ' yang diimpor. Ubah lewat impor DPA Pergeseran/Perubahan.' : '' })}${fld({ name: 'Sumber_Dana', label: 'Sumber Dana', value: s.Sumber_Dana, span: 's6' })}
       ${fld({ name: 'Bidang', label: 'Bidang Pengampu', value: s.Bidang, span: 's6', type: 'select', opts: optBidang('— pilih —'), req: true })}${fld({ name: 'PIC_Email', label: 'Pejabat PIC (verifikator realisasi)', value: s.PIC_Email, span: 's6', type: 'select', opts: pejabatOpts() })}
       <div class="sect">Informasi DPA / SIPD (opsional)</div>
       ${fld({ name: 'Lokasi', label: 'Lokasi', value: s.Lokasi, span: 's6' })}${fld({ name: 'Waktu_Pelaksanaan', label: 'Waktu pelaksanaan', value: s.Waktu_Pelaksanaan, span: 's6', ph: 'Januari s.d Desember' })}
@@ -413,13 +435,13 @@ Pages.formKontrak = function (k, prefill) {
 Pages.detailKontrak = function (id) {
   const k = Store.get('kontrak', id); if (!k) return; const sk = Store.get('subkeg', k.ID_SubKeg) || {}; const s = sk.ID_SubKeg ? Calc.sk(sk) : null; const cl = Calc.checklist(id);
   const satu = S.t.kontrak.filter((x) => x.ID_SubKeg === k.ID_SubKeg && x.Status !== 'PUTUS').length === 1;
-  const docs = S.t.arsip.filter((a) => a.ID_Kontrak === id); const pays = S.t.realisasi.filter((r) => r.ID_Kontrak === id || (satu && r.ID_SubKeg === k.ID_SubKeg && !r.ID_Kontrak)).sort((a, b) => a.Bulan - b.Bulan);
+  const docs = S.t.arsip.filter((a) => a.ID_Kontrak === id); const pays = Calc.bayarList(k);
   const m = modal({ title: k.No_SPK, icon: 'kontrak', size: 'lg',
     body: `<div class="row mb-s">${stChip(K.ST_KONTRAK, Calc.kontrakStatus(k))}${chip('Berkas ' + fmtN(cl.pct, 0) + '%', cl.pct >= 99.9 ? 'ok' : 'warn')}${s ? devChip(s.dev) : ''}</div>
       <div class="grid g2"><dl class="kv"><dt>Sub kegiatan</dt><dd>${esc(skLabel(sk))}</dd><dt>Uraian</dt><dd>${esc(k.Uraian_Pekerjaan)}</dd><dt>Nilai</dt><dd class="num">${rp(k.Nilai_Kontrak)}</dd><dt>Metode</dt><dd>${esc(k.Metode || '-')}</dd><dt>Jangka waktu</dt><dd>${tgl(k.Tgl_Mulai)} – ${tgl(k.Tgl_Selesai)}</dd></dl>
       <dl class="kv"><dt>Penyedia</dt><dd>${esc(k.Penyedia)}</dd><dt>Penandatangan</dt><dd>${esc(k.Direktur || '-')} (${esc(k.Jabatan_Direktur || '-')})</dd><dt>NPWP</dt><dd>${esc(k.NPWP || '-')}</dd><dt>Rekening</dt><dd>${esc([k.Nama_Bank, k.No_Rekening, k.Nama_Rekening].filter(Boolean).join(' · ') || '-')}</dd><dt>PIC</dt><dd>${esc(Store.nama(sk.PIC_Email))}</dd></dl></div>
       ${Aturan.kontrakHtml(k.Nilai_Kontrak, ((k.ID_Paket && Store.get('pengadaan', k.ID_Paket)) || {}).Jenis_Pengadaan, k.Metode, k.ID_Paket ? Store.get('pengadaan', k.ID_Paket) : null).replace('class="note info"', 'class="note info mt"')}
-      <div class="lbl mt mb-s">Pembayaran tercatat · ${rp(Calc.bayarKontrak(k))}</div>${pays.length ? `<table class="t light"><thead><tr><th>Bulan</th><th>SP2D</th><th class="n">Nilai</th><th>Status</th></tr></thead><tbody>${pays.map((r) => `<tr><td>${K.BULAN[r.Bulan - 1]}</td><td class="mono">${esc(r.No_SP2D || '-')}</td><td class="n">${fmtN(r.Realisasi_Keuangan)}</td><td>${stChip(K.ST_REAL, r.Status)}</td></tr>`).join('')}</tbody></table>` : '<p class="mini">Belum ada realisasi yang dikaitkan ke kontrak ini.</p>'}
+      <div class="lbl mt mb-s">Pembayaran tercatat · ${rp(Calc.bayarKontrak(k))}</div>${pays.length ? `<table class="t light"><thead><tr><th>Bulan</th><th>SP2D</th><th class="n">Nilai</th><th>Status</th></tr></thead><tbody>${pays.map((r) => `<tr><td>${K.BULAN[r.bulan - 1]}</td><td class="mono">${esc(r.no || '-')}${r.sp2d ? '' : ' <span class="chip warn">lama</span>'}</td><td class="n">${fmtN(r.nilai)}</td><td>${stChip(K.ST_REAL, r.status)}</td></tr>`).join('')}</tbody></table>` : '<p class="mini">Belum ada SP2D yang dikaitkan ke kontrak ini.</p>'}
       <div class="lbl mt mb-s">Dokumen (${docs.length})</div><p class="mini" style="margin:0">${docs.map((d) => esc(jenisNama(d.Jenis_Dokumen))).join(' · ') || 'Belum ada dokumen.'}</p>
       <details class="mt" data-saran-kontrak><summary class="lbl" style="cursor:pointer">Dokumen disarankan untuk kontrak ini</summary><div class="mt-s">${Saran.html(k.ID_Paket ? Store.get('pengadaan', k.ID_Paket) : null, k, true)}</div></details>`,
     foot: `<a class="btn" href="#/arsip?k=${esc(id)}" data-x>${ic('arsip', 'sm')}Arsip</a><a class="btn" href="#/checklist?k=${esc(id)}" data-x>${ic('checklist', 'sm')}Checklist</a>${Can.generate() ? `<button class="btn" data-gen>${ic('docadd', 'sm')}Buat Dokumen</button>` : ''}${Can.editKontrak(sk) ? `<button class="btn pri" data-ed>${ic('edit', 'sm')}Ubah</button>` : ''}` });
@@ -429,11 +451,118 @@ Pages.detailKontrak = function (id) {
 };
 
 /* =====================================================================
-   4. REALISASI BULANAN
+   4. REALISASI BULANAN (v1.3.0: keuangan dari SP2D per kode rekening)
    ===================================================================== */
+/** Terapkan respons SP2D (baris turunan) ke store lokal, lalu paksa sinkron penuh. */
+function terapkanSp2d(d, idSp, hapus) {
+  if (idSp && (hapus || d.rincian)) { S.t.sp2dRincian = S.t.sp2dRincian.filter((l) => l.ID_SP2D !== idSp); }
+  if (hapus && idSp) Store.remove('sp2d', idSp);
+  (d.rincian || []).forEach((l) => Store.upsert('sp2dRincian', l));
+  (d.realisasi || []).forEach((r) => { if (r) Store.upsert('realisasi', r); });
+  (d.tindakLanjut || []).forEach((r) => Store.upsert('tindakLanjut', r));
+  Store.bump(); Store.saveSoon(); S.ver = '';
+}
+const rekLabel = (r) => r.Kode_Rekening + ' — ' + DpaPilih.pot(r.Uraian, 70);
+/** Formulir SP2D: kepala + rincian per kode rekening. prefill = { No_SP2D, Tgl_SP2D, nilai, Uraian, dariLama } */
+Pages.formSp2d = function (sk, sp, prefill) {
+  prefill = prefill || {}; const baru = !sp; sp = sp || {};
+  const rek = Calc.rekPagu(sk.ID_SubKeg), real = Calc.rekReal(sk.ID_SubKeg), kontrak = S.t.kontrak.filter((k) => k.ID_SubKeg === sk.ID_SubKeg);
+  const lamaLines = baru ? [] : Calc.sp2dLines(sp.ID_SP2D);
+  const sudahIni = {}; if (!baru && sp.Status !== 'DITOLAK') lamaLines.forEach((l) => { sudahIni[l.Kode_Rekening] = (sudahIni[l.Kode_Rekening] || 0) + num(l.Nilai); });
+  let lines = lamaLines.length ? lamaLines.map((l) => ({ kode: l.Kode_Rekening, nilai: num(l.Nilai) })) : [{ kode: rek.length === 1 ? rek[0].Kode_Rekening : '', nilai: num(prefill.nilai) || '' }];
+  const isPIC = Can.verifReal(sk);
+  const m = modal({ title: baru ? 'Catat SP2D' : 'Ubah SP2D ' + sp.No_SP2D, icon: 'receipt', size: 'lg',
+    body: `${prefill.dariLama ? `<div class="note info mb-s">${ic('info', 'sm')}<div>Memetakan realisasi lama <b>${K.BULAN[prefill.bulan - 1]}</b> (${rp(prefill.lama)}) ke kode rekening. Setelah disimpan, realisasi keuangan bulan itu dihitung dari SP2D saja; nilai lama tetap tercatat sebagai riwayat.</div></div>` : ''}
+      <p class="mini" style="margin:0 0 8px">${esc(skLabel(sk))}${sk.Jenis_Versi ? ' · pagu mengikuti ' + esc(K.VERSI[sk.Jenis_Versi] || sk.Jenis_Versi) : ''}</p>
+      <form class="fg" id="fSp">${fld({ name: 'No_SP2D', label: 'Nomor SP2D', value: sp.No_SP2D || prefill.No_SP2D || '', span: 's6', req: true, max: 100, hint: 'Satu nomor SP2D hanya dicatat sekali; bila membayar beberapa rekening, tambahkan barisnya di bawah.' })}
+        ${fld({ name: 'Tgl_SP2D', label: 'Tanggal SP2D', value: sp.Tgl_SP2D || prefill.Tgl_SP2D || '', type: 'date', span: 's3', req: true, hint: 'Menentukan bulan realisasi' })}
+        ${fld({ name: 'ID_Kontrak', label: 'Kontrak (opsional)', type: 'select', span: 's3', value: sp.ID_Kontrak || '', opts: [['', '— tanpa kontrak —']].concat(kontrak.map((k) => [k.ID_Kontrak, k.No_SPK + ' — ' + k.Penyedia])) })}
+        ${fld({ name: 'Uraian', label: 'Uraian pembayaran (opsional)', value: sp.Uraian || prefill.Uraian || '', type: 'textarea', rows: 2, max: 500, ph: 'mis. Tagihan listrik kantor bulan Maret' })}</form>
+      <div class="lbl mt mb-s">Rincian per kode rekening ${rek.length ? '' : '<span class="chip warn">rincian DPA belum diimpor</span>'}</div>
+      ${rek.length ? '' : `<div class="note warn mb-s">${ic('warn', 'sm')}<div>Rincian DPA Sub Kegiatan ini belum diimpor, jadi pagu per kode rekening tidak dapat dicek. Ketik kode rekening sesuai DPA (contoh 5.1.02.01.001.00024).</div></div>`}
+      <div class="tw"><table class="t light" id="spLines"><thead><tr><th style="min-width:280px">Kode rekening</th><th class="n" style="width:190px">Nilai (Rp)</th><th class="n">Sisa pagu setelah SP2D ini</th><th></th></tr></thead><tbody></tbody>
+      <tfoot><tr><td><button type="button" class="btn sm" data-add>${ic('add', 'sm')}Tambah rekening</button></td><td class="n"><b id="spTot"></b></td><td colspan="2"></td></tr></tfoot></table></div>
+      <div class="hint mt">${isPIC ? 'Anda PIC Sub Kegiatan ini — SP2D langsung terverifikasi.' : 'SP2D diverifikasi oleh PIC: ' + esc(Store.nama(sk.PIC_Email))}</div>`,
+    foot: `<button class="btn" data-x>Batal</button><button class="btn pri" data-simpan>${ic('save', 'sm')}${isPIC ? 'Simpan & Verifikasi' : 'Simpan & Ajukan'}</button>` });
+  const tb = m.el.querySelector('#spLines tbody');
+  const sisaOf = (kode, nilai) => { const p = rek.find((r) => r.Kode_Rekening === kode); if (!p) return null; return num(p.Pagu) - ((real[kode] || 0) - (sudahIni[kode] || 0)) - nilai; };
+  const sisaHtml = (sisa) => (sisa == null ? '<span class="mini">—</span>' : `<span class="${sisa < -0.5 ? 'c-err' : ''}">${sisa < -0.5 ? ic('warn', 'sm') + ' ' : ''}${rp(sisa)}</span>`);
+  const draw = () => {
+    tb.innerHTML = lines.map((l, i) => {
+      const sisa = l.kode ? sisaOf(l.kode, num(l.nilai)) : null, p = rek.find((r) => r.Kode_Rekening === l.kode);
+      const pilih = rek.length ? `<select class="in" data-kode="${i}"><option value="">— pilih kode rekening —</option>${rek.map((r) => `<option value="${esc(r.Kode_Rekening)}" ${r.Kode_Rekening === l.kode ? 'selected' : ''}>${esc(rekLabel(r))}${r.Rutin === 'YA' ? ' (rutin)' : ''}</option>`).join('')}</select>`
+        : `<input class="in mono" data-kode="${i}" value="${esc(l.kode)}" placeholder="5.1.02.01.001.00024">`;
+      return `<tr><td>${pilih}${p ? `<span class="sub">Pagu aktif ${rp(p.Pagu)} · sudah SP2D ${rp((real[l.kode] || 0) - (sudahIni[l.kode] || 0))}</span>` : ''}</td>
+        <td class="n"><div class="affix"><span>Rp</span><input class="in num" data-nilai="${i}" data-rp inputmode="numeric" value="${l.nilai === '' ? '' : fmtN(l.nilai)}"></div></td>
+        <td class="n" data-sisa="${i}">${sisaHtml(sisa)}</td>
+        <td class="acts">${lines.length > 1 ? `<button type="button" class="btn ghost icon" data-del="${i}" title="Hapus baris">${ic('trash', 'sm')}</button>` : ''}</td></tr>`;
+    }).join('');
+    m.el.querySelector('#spTot').textContent = rp(lines.reduce((a, l) => a + num(l.nilai), 0));
+  };
+  draw();
+  m.el.addEventListener('change', (e) => { const k = e.target.dataset.kode; if (k != null) { lines[num(k)].kode = e.target.value.trim(); draw(); } });
+  m.el.addEventListener('input', (e) => {
+    const n = e.target.dataset.nilai; if (n == null) return;
+    const i = num(n), l = lines[i]; l.nilai = num(e.target.value);
+    m.el.querySelector('#spTot').textContent = rp(lines.reduce((a, x) => a + num(x.nilai), 0));
+    const c = m.el.querySelector(`[data-sisa="${i}"]`); if (c) c.innerHTML = sisaHtml(l.kode ? sisaOf(l.kode, l.nilai) : null);
+  });
+  m.el.addEventListener('click', async (e) => {
+    if (e.target.closest('[data-add]')) { lines.push({ kode: '', nilai: '' }); draw(); return; }
+    const d = e.target.closest('[data-del]'); if (d) { lines.splice(num(d.dataset.del), 1); draw(); return; }
+    const sv = e.target.closest('[data-simpan]'); if (!sv) return;
+    const f = $('#fSp', m.el), v = validate(f, { No_SP2D: req('Nomor SP2D'), Tgl_SP2D: (x) => (!x ? 'Tanggal SP2D wajib diisi.' : String(x).slice(0, 4) !== String(sk.Tahun || S.tahun) ? 'Tanggal harus di tahun anggaran ' + (sk.Tahun || S.tahun) + '.' : '') });
+    if (!v) return;
+    const isi = lines.filter((l) => l.kode || num(l.nilai));
+    if (!isi.length) { toast('Isi minimal satu kode rekening beserta nilainya.', 'warn'); return; }
+    if (isi.some((l) => !l.kode)) { toast('Pilih kode rekening untuk setiap baris bernilai.', 'warn'); return; }
+    if (isi.some((l) => !(num(l.nilai) > 0))) { toast('Nilai setiap rekening harus lebih dari 0.', 'warn'); return; }
+    if (new Set(isi.map((l) => l.kode)).size !== isi.length) { toast('Kode rekening yang sama tercantum dua kali; gabungkan nilainya.', 'warn'); return; }
+    const lebih = isi.find((l) => { const s = sisaOf(l.kode, num(l.nilai)); return s != null && s < -0.5; });
+    if (lebih) { toast('Rekening ' + lebih.kode + ' melebihi pagu aktif. Periksa nilai atau tunggu penetapan Pergeseran/Perubahan.', 'warn'); return; }
+    const data = { ID_SP2D: sp.ID_SP2D || undefined, ID_SubKeg: sk.ID_SubKeg, No_SP2D: v.No_SP2D, Tgl_SP2D: v.Tgl_SP2D, ID_Kontrak: v.ID_Kontrak, Uraian: v.Uraian,
+      rincian: isi.map((l) => ({ Kode_Rekening: l.kode, Nilai: num(l.nilai) })) };
+    const r = await mutate('sp2d.simpan', data, { table: 'sp2d', btn: sv, onOk: (d) => terapkanSp2d(d, d.row && d.row.ID_SP2D), okMsg: isPIC ? 'SP2D tersimpan & terverifikasi.' : 'SP2D diajukan ke PIC.' });
+    if (r.success) m.close();
+  });
+};
+Pages.hapusSp2d = async function (sp) {
+  if (!(await confirmBox(`Hapus SP2D <b>${esc(sp.No_SP2D)}</b> (${rp(sp.Nilai_Total)})? Realisasi keuangan bulan ${K.BULAN[sp.Bulan - 1]} dihitung ulang.`, { danger: true, ok: 'Hapus' }))) return;
+  mutate('sp2d.hapus', { ID_SP2D: sp.ID_SP2D }, { onOk: (d) => terapkanSp2d(d, sp.ID_SP2D, true), okMsg: 'SP2D dihapus.' });
+};
+Pages.verifSp2d = async function (sp, setuju) {
+  let catatan = '';
+  if (!setuju) {
+    catatan = await new Promise((res) => { const m = modal({ title: 'Tolak SP2D ' + sp.No_SP2D, size: 'sm', body: fld({ name: 'c', label: 'Alasan penolakan', type: 'textarea', rows: 3, req: true }), foot: '<button class="btn" data-x>Batal</button><button class="btn danger" data-y>Tolak</button>' }); m.el.querySelector('[data-y]').onclick = () => { const v = m.el.querySelector('[name=c]').value.trim(); if (!v) { toast('Isi alasan penolakan.', 'warn'); return; } m.close(); res(v); }; m.el.addEventListener('click', (ev) => { if (ev.target.closest('[data-x]')) res(null); }); });
+    if (catatan == null) return;
+  }
+  mutate('sp2d.verifikasi', { ID_SP2D: sp.ID_SP2D, setuju, catatan }, { table: 'sp2d', onOk: (d) => terapkanSp2d(d, null), okMsg: setuju ? 'SP2D diverifikasi.' : 'SP2D ditolak.' });
+};
+/** Daftar SP2D (tabel) — dipakai tab Input (per bulan) & tab SP2D & Rekening */
+function tabelSp2d(list, sk) {
+  if (!list.length) return '';
+  const bisa = Can.inputReal(sk), pic = Can.verifReal(sk), me = norm(S.me && S.me.email);
+  return `<div class="tw"><table class="t"><thead><tr><th>Tanggal</th><th>Nomor SP2D</th><th style="min-width:260px">Rincian kode rekening</th><th class="n">Total (Rp)</th><th>Status</th><th>Diinput</th><th></th></tr></thead><tbody>
+    ${list.map((s) => { const ln = Calc.sp2dLines(s.ID_SP2D), ubah = bisa && (s.Status !== 'TERVERIFIKASI' || pic), hapus = pic || Can.admin() || (bisa && s.Status !== 'TERVERIFIKASI' && norm(s.Diinput_Oleh) === me);
+      return `<tr class="${s.Status === 'DITOLAK' ? 'c-mut' : ''}"><td>${tgl(s.Tgl_SP2D)}</td><td class="mono">${esc(s.No_SP2D)}${s.ID_Kontrak ? `<span class="sub">${esc((Store.get('kontrak', s.ID_Kontrak) || {}).No_SPK || '')}</span>` : ''}</td>
+        <td class="mini">${ln.map((l) => `<div><span class="mono">${esc(l.Kode_Rekening)}</span> ${esc(DpaPilih.pot(l.Uraian_Rekening, 48))} · <b>${fmtN(l.Nilai)}</b></div>`).join('')}${s.Uraian ? `<div class="c-mut">${esc(s.Uraian)}</div>` : ''}</td>
+        <td class="n"><b>${fmtN(s.Nilai_Total)}</b></td><td>${stChip(K.ST_REAL, s.Status)}${s.Catatan_Verifikasi ? `<span class="sub c-err">${esc(s.Catatan_Verifikasi)}</span>` : ''}${s._pending ? '<span class="sub">menyimpan…</span>' : ''}</td>
+        <td>${esc(Store.nama(s.Diinput_Oleh))}</td>
+        <td class="acts">${pic && s.Status === 'DIAJUKAN' ? `<button class="btn sm pri" data-sp-ok="${esc(s.ID_SP2D)}">${ic('check', 'sm')}Setujui</button> <button class="btn sm danger" data-sp-no="${esc(s.ID_SP2D)}">Tolak</button> ` : ''}${ubah ? `<button class="btn ghost icon" data-sp-ed="${esc(s.ID_SP2D)}" title="Ubah">${ic('edit', 'sm')}</button>` : ''}${hapus ? `<button class="btn ghost icon" data-sp-del="${esc(s.ID_SP2D)}" title="Hapus">${ic('trash', 'sm')}</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div>`;
+}
+/** Klik tombol SP2D di wadah mana pun */
+function klikSp2d(e, sk) {
+  const g = (a) => { const b = e.target.closest('[' + a + ']'); return b ? Store.get('sp2d', b.getAttribute(a)) : null; };
+  let s;
+  if ((s = g('data-sp-ed'))) { Pages.formSp2d(sk, s); return true; }
+  if ((s = g('data-sp-del'))) { Pages.hapusSp2d(s); return true; }
+  if ((s = g('data-sp-ok'))) { Pages.verifSp2d(s, true); return true; }
+  if ((s = g('data-sp-no'))) { Pages.verifSp2d(s, false); return true; }
+  return false;
+}
 Pages.add({
   id: 'realisasi', title: 'Realisasi Bulanan', icon: 'trend', nav: true, group: 'Menu Utama', short: 'Realisasi',
-  badge() { return S.t.realisasi.filter((r) => r.Status === 'DIAJUKAN' && Can.verifReal(Store.get('subkeg', r.ID_SubKeg))).length; },
+  badge() { return S.t.realisasi.filter((r) => r.Status === 'DIAJUKAN' && Can.verifReal(Store.get('subkeg', r.ID_SubKeg))).length + S.t.sp2d.filter((r) => r.Status === 'DIAJUKAN' && Can.verifReal(Store.get('subkeg', r.ID_SubKeg))).length; },
   render(el, q, st) {
     st.tab = q.tab || st.tab || 'input';
     if (q.sk) st.sk = q.sk;
@@ -441,13 +570,19 @@ Pages.add({
     if (!st.sk || !Store.get('subkeg', st.sk)) st.sk = (bisa[0] || S.t.subkeg[0] || {}).ID_SubKeg || '';
     if (!st.bulan) { const c = Calc.cutDefault(); const sk0 = st.sk; const ada = S.t.realisasi.filter((r) => r.ID_SubKeg === sk0).map((r) => r.Bulan); st.bulan = Math.min(12, ada.length ? Math.max(...ada) + (ada.indexOf(c) > -1 ? 0 : 1) : c); st.bulan = clamp(st.bulan, 1, 12); }
     const nVerif = this.badge();
-    el.innerHTML = ph({ eyebrow: 'Modul Pelaksanaan APBD', title: 'Input & Verifikasi Realisasi Bulanan', desc: 'Pencatatan progres fisik (% kumulatif) dan realisasi keuangan (SP2D) per Sub Kegiatan.' }) +
-      `<div class="tabs mb" style="border-radius:var(--r)"><button data-tab="input" class="${st.tab === 'input' ? 'on' : ''}">${ic('edit', 'sm')}Input Realisasi</button><button data-tab="verif" class="${st.tab === 'verif' ? 'on' : ''}">${ic('verified', 'sm')}Menunggu Verifikasi ${nVerif ? chip(nVerif, 'gold') : ''}</button><button data-tab="rekap" class="${st.tab === 'rekap' ? 'on' : ''}">${ic('table', 'sm')}Rekap Bulanan</button></div><div id="tabBody"></div>`;
+    el.innerHTML = ph({ eyebrow: 'Modul Pelaksanaan APBD', title: 'Input & Verifikasi Realisasi Bulanan', desc: 'Progres fisik (% kumulatif) per Sub Kegiatan dan SP2D per kode rekening. Realisasi keuangan bulanan dihitung otomatis dari SP2D.' }) +
+      `<div class="tabs mb" style="border-radius:var(--r)"><button data-tab="input" class="${st.tab === 'input' ? 'on' : ''}">${ic('edit', 'sm')}Input Realisasi</button><button data-tab="sp2d" class="${st.tab === 'sp2d' ? 'on' : ''}">${ic('receipt', 'sm')}SP2D & Rekening</button><button data-tab="verif" class="${st.tab === 'verif' ? 'on' : ''}">${ic('verified', 'sm')}Menunggu Verifikasi ${nVerif ? chip(nVerif, 'gold') : ''}</button><button data-tab="rekap" class="${st.tab === 'rekap' ? 'on' : ''}">${ic('table', 'sm')}Rekap Bulanan</button></div><div id="tabBody"></div>`;
     const body = $('#tabBody');
     if (st.tab === 'input') this.input(body, st, bisa);
+    else if (st.tab === 'sp2d') this.sp2d(body, st, bisa);
     else if (st.tab === 'verif') this.verif(body, st);
     else this.rekap(body, st);
     el.onclick = (e) => { const t = e.target.closest('[data-tab]'); if (t) { st.tab = t.dataset.tab; if (q.tab || q.sk) history.replaceState(null, '', '#/realisasi'); App.refresh(); } };
+  },
+  pilihSk(st, bisa, denganBulan, rows) {
+    return `<div class="card mb"><div class="card-h"><h3>${ic('filter', 'sm')}Parameter Rekening & Periode</h3><p>Tahun Anggaran berjalan: <b>${esc(S.tahun)}</b></p></div><div class="card-b"><div class="fg">
+        <div class="f ${denganBulan ? 's8' : 's12'}"><label>Sub Kegiatan</label>${selectHtml('sk', (bisa.length ? bisa : S.t.subkeg).map((s) => [s.ID_SubKeg, skLabel(s)]), st.sk)}</div>
+        ${denganBulan ? `<div class="f s4"><label>Periode laporan</label>${selectHtml('bulan', optBulan().map((o) => [o[0], o[1] + ' ' + S.tahun + (rows.some((r) => r.Bulan === o[0]) ? ' ✓' : '')]), st.bulan)}</div>` : ''}</div></div></div>`;
   },
   input(body, st, bisa) {
     if (!S.t.subkeg.length) { body.innerHTML = `<div class="card">${emptyBox('Belum ada sub kegiatan', 'Isi master DPA di menu Perencanaan Anggaran terlebih dahulu.')}</div>`; return; }
@@ -457,54 +592,88 @@ Pages.add({
     const boleh = Can.inputReal(sk) && (!row || row.Status !== 'TERVERIFIKASI' || Can.verifReal(sk));
     const kontrak = S.t.kontrak.filter((k) => k.ID_SubKeg === sk.ID_SubKeg);
     const isPIC = Can.verifReal(sk);
-    body.innerHTML = `<div class="card mb"><div class="card-h"><h3>${ic('filter', 'sm')}Parameter Rekening & Periode</h3><p>Tahun Anggaran berjalan: <b>${esc(S.tahun)}</b></p></div><div class="card-b"><div class="fg">
-        <div class="f s8"><label>Sub Kegiatan</label>${selectHtml('sk', (bisa.length ? bisa : S.t.subkeg).map((s) => [s.ID_SubKeg, skLabel(s)]), st.sk)}</div>
-        <div class="f s4"><label>Periode laporan</label>${selectHtml('bulan', optBulan().map((o) => [o[0], o[1] + ' ' + S.tahun + (rows.some((r) => r.Bulan === o[0]) ? ' ✓' : '')]), b)}</div></div></div></div>
+    const spBulan = Calc.sp2dRows(sk.ID_SubKeg).filter((s) => s.Bulan === b);
+    const keuBulan = row ? num(row.Realisasi_Keuangan) : 0, lamaBelum = row && row.Sumber_Keuangan !== 'SP2D' && keuBulan > 0;
+    body.innerHTML = this.pilihSk(st, bisa, true, rows) + `
       <div class="card mb" style="border-left:4px solid var(--accent)"><div class="card-h"><h3 style="font-size:13px;letter-spacing:.06em;text-transform:uppercase">Ringkasan realisasi berjalan (s.d. ${b > 1 ? K.BULAN[b - 2] : 'awal tahun'})</h3><div class="acts">${chip('PIC: ' + Store.nama(sk.PIC_Email), 'slate', 'person')}</div></div><div class="card-b"><div class="grid g4">
-        ${kpi({ l: 'Pagu Sub Kegiatan', v: rp(sk.Pagu), s: esc(sk.Sumber_Dana || 'DPA') })}${kpi({ l: 'Nilai Kontrak', v: rp(prev.nilaiKontrak), s: kontrak.length + ' kontrak · sisa ' + rpS(num(sk.Pagu) - prev.nilaiKontrak) })}
+        ${kpi({ l: 'Pagu Sub Kegiatan', v: rp(sk.Pagu), s: esc((sk.Jenis_Versi ? K.VERSI[sk.Jenis_Versi] + ' · ' : '') + (sk.Sumber_Dana || 'DPA')) })}${kpi({ l: 'Nilai Kontrak', v: rp(prev.nilaiKontrak), s: kontrak.length + ' kontrak · sisa ' + rpS(num(sk.Pagu) - prev.nilaiKontrak) })}
         ${kpi({ l: 'Akumulasi Keuangan', v: rp(prev.keu), bar: prev.keuPct, barCls: 'gold', s: pct(prev.keuPct) + ' dari pagu' })}${kpi({ l: 'Akumulasi Fisik', v: pct(prev.fisik), bar: prev.fisik, tick: Calc.rencana(sk, b - 1), s: 'Rencana ' + pct(Calc.rencana(sk, b - 1)) })}</div>
         <div class="note warn mt">${ic('flag', 'sm')}<div>Sasaran rencana ${K.BULAN[b - 1]} ${esc(S.tahun)}: <b>fisik ${pct(ren)}</b> (kumulatif) · keuangan kumulatif <b>${rp((ren / 100) * num(sk.Pagu))}</b></div></div></div></div>
-      <div class="card mb"><div class="card-h"><h3>${ic('edit', 'sm')}Form Capaian Realisasi ${K.BULAN[b - 1]} ${esc(S.tahun)}</h3><div class="acts">${row ? stChip(K.ST_REAL, row.Status) : chip('Belum ada entri', 'slate')}</div>${row && row.Catatan_Verifikasi ? `<p class="c-err">Catatan verifikator: ${esc(row.Catatan_Verifikasi)}</p>` : ''}</div>
+      <div class="card mb"><div class="card-h"><h3>${ic('receipt', 'sm')}SP2D ${K.BULAN[b - 1]} ${esc(S.tahun)} · ${rp(keuBulan)}</h3><div class="acts">${Can.inputReal(sk) ? `<button class="btn gold" data-sp-baru>${ic('add', 'sm')}Catat SP2D</button>` : ''}</div><p>Realisasi keuangan bulan ini = jumlah SP2D (kecuali yang ditolak). Satu SP2D dapat membayar beberapa kode rekening.</p></div>
+        ${lamaBelum ? `<div class="note warn" style="margin:0 16px 12px">${ic('warn', 'sm')}<div>Nilai lama <b>${rp(keuBulan)}</b>${row.No_SP2D ? ' (SP2D ' + esc(row.No_SP2D) + ')' : ''} belum dipetakan ke kode rekening. ${Can.inputReal(sk) ? `<button class="btn sm" data-petakan="${b}">Petakan ke SP2D</button>` : ''}</div></div>` : ''}
+        ${spBulan.length ? tabelSp2d(spBulan, sk) : `<div class="card-b"><p class="mini" style="margin:0">Belum ada SP2D di bulan ini.</p></div>`}</div>
+      <div class="card mb"><div class="card-h"><h3>${ic('edit', 'sm')}Form Capaian Fisik ${K.BULAN[b - 1]} ${esc(S.tahun)}</h3><div class="acts">${row ? stChip(K.ST_REAL, row.Status) : chip('Belum ada entri', 'slate')}</div>${row && row.Catatan_Verifikasi ? `<p class="c-err">Catatan verifikator: ${esc(row.Catatan_Verifikasi)}</p>` : ''}</div>
         <div class="card-b"><form class="fg" id="fReal">
           <div class="f s6"><label>Realisasi fisik kumulatif s.d. bulan ini <span class="req">*</span></label><div class="affix r"><input class="in num" name="Realisasi_Fisik" inputmode="decimal" data-num value="${row ? esc(String(row.Realisasi_Fisik).replace('.', ',')) : ''}" ${boleh ? '' : 'readonly'} placeholder="${esc(String(prev.fisik).replace('.', ','))}"><span>%</span></div><div class="hint" id="devHint"></div><div class="err-m"></div></div>
-          <div class="f s6"><label>Realisasi keuangan bulan ini (SP2D terbit)</label><div class="affix"><span>Rp</span><input class="in num" name="Realisasi_Keuangan" data-rp data-num inputmode="numeric" value="${row ? fmtN(row.Realisasi_Keuangan) : ''}" ${boleh ? '' : 'readonly'} placeholder="0"></div><div class="hint" id="keuHint"></div><div class="err-m"></div></div>
-          ${fld({ name: 'ID_Kontrak', label: 'Kontrak terkait (opsional)', type: 'select', span: 's4', value: row ? row.ID_Kontrak : (kontrak.length === 1 ? kontrak[0].ID_Kontrak : ''), dis: !boleh, opts: [['', '— tanpa kontrak / swakelola —']].concat(kontrak.map((k) => [k.ID_Kontrak, k.No_SPK + ' — ' + k.Penyedia])) })}
-          ${fld({ name: 'No_SP2D', label: 'Nomor SP2D', value: row && row.No_SP2D, span: 's4', ro: !boleh })}${fld({ name: 'Tgl_SP2D', label: 'Tanggal SP2D', value: row && row.Tgl_SP2D, type: 'date', span: 's4', ro: !boleh })}
-          ${fld({ name: 'Uraian', label: 'Uraian hasil pekerjaan fisik', value: row && row.Uraian, type: 'textarea', rows: 3, ro: !boleh, max: 1000 })}
+          <div class="f s6"><label>Realisasi keuangan bulan ini (dari SP2D)</label><div class="affix"><span>Rp</span><input class="in num" value="${fmtN(keuBulan)}" readonly tabindex="-1"></div><div class="hint" id="keuHint"></div></div>
+          ${fld({ name: 'ID_Kontrak', label: 'Kontrak terkait (opsional)', type: 'select', span: 's6', value: row ? row.ID_Kontrak : (kontrak.length === 1 ? kontrak[0].ID_Kontrak : ''), dis: !boleh, opts: [['', '— tanpa kontrak / swakelola —']].concat(kontrak.map((k) => [k.ID_Kontrak, k.No_SPK + ' — ' + k.Penyedia])) })}
+          ${fld({ name: 'Uraian', label: 'Uraian hasil pekerjaan fisik', value: row && row.Uraian !== 'Dibuat otomatis dari SP2D' ? row.Uraian : '', type: 'textarea', rows: 3, ro: !boleh, max: 1000 })}
           ${fld({ name: 'Kendala', label: 'Kendala / hambatan lapangan', value: row && row.Kendala, type: 'textarea', rows: 2, span: 's6', ro: !boleh })}${fld({ name: 'Rencana_Aksi', label: 'Rencana aksi / mitigasi percepatan', value: row && row.Rencana_Aksi, type: 'textarea', rows: 2, span: 's6', ro: !boleh })}
         </form>
         ${boleh ? `<div class="lbl mt mb-s">Lampiran bukti (SP2D / foto lapangan)</div><div class="drop" id="dropR">${ic('upload')}<b>Tarik file ke sini atau klik untuk memilih</b><span class="mini">PDF/Word/Excel/JPG/PNG/ZIP maks. ${esc(S.settings.MAKS_UNGGAH_MB || 10)} MB · tersimpan di Arsip Dokumen</span><div class="prog hidden"><i></i></div></div><input type="file" id="fileR" class="hidden" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.zip">` : `<div class="note info mt">${ic('lock', 'sm')}<div>${row && row.Status === 'TERVERIFIKASI' ? 'Realisasi bulan ini sudah terverifikasi; hanya PIC/Admin yang dapat mengubah.' : 'Anda tidak berwenang menginput realisasi untuk sub kegiatan di bidang ini.'}</div></div>`}
         </div>
         ${boleh ? `<div class="card-f" style="justify-content:flex-end">${ic('info', 'sm')}<span style="margin-right:auto">${isPIC ? 'Anda PIC sub kegiatan ini — pengajuan langsung terverifikasi.' : 'Pengajuan diverifikasi oleh PIC: ' + esc(Store.nama(sk.PIC_Email))}</span><button class="btn" data-save="draf">${ic('save', 'sm')}Simpan Draf</button><button class="btn gold" data-save="ajukan">${ic('send', 'sm')}${isPIC ? 'Simpan & Verifikasi' : 'Ajukan Verifikasi'}</button></div>` : ''}</div>
-      <div class="card"><div class="card-h"><h3>Riwayat Realisasi Fisik & Keuangan</h3><p>${esc(skLabel(sk))}</p></div><div class="tw"><table class="t"><thead><tr><th>Bulan</th><th class="n">Rencana Fisik</th><th class="n">Real. Fisik</th><th class="c">Deviasi</th><th class="n">Rencana Keu. Kum.</th><th class="n">Real. Bulan (Rp)</th><th class="n">Kumulatif (Rp)</th><th>No. SP2D</th><th>Status</th><th>Diinput</th></tr></thead><tbody>
-        ${(() => { let kum = 0; return [...Array(12).keys()].map((i) => { const m = i + 1, r = rows.find((x) => x.Bulan === m); if (r && Calc.counted(r)) kum += num(r.Realisasi_Keuangan); const rf = Calc.rencana(sk, m); if (!r && m > Math.max(b, Calc.cutDefault())) return ''; return `<tr class="${m === b ? 'flag' : ''} click" data-bln="${m}"><td>${K.BULAN[i]}</td><td class="n">${pct(rf)}</td><td class="n">${r ? pct(r.Realisasi_Fisik) : '-'}</td><td class="c">${r ? devChip(r.Realisasi_Fisik - rf, amb) : ''}</td><td class="n">${fmtN((rf / 100) * num(sk.Pagu))}</td><td class="n">${r ? fmtN(r.Realisasi_Keuangan) : '-'}</td><td class="n">${r ? fmtN(kum) : ''}</td><td class="mono">${r ? esc(r.No_SP2D || '') : ''}</td><td>${r ? stChip(K.ST_REAL, r.Status) + (r._pending ? '<span class="sub">menyimpan…</span>' : '') : '<span class="mini">belum diinput</span>'}</td><td>${r ? esc(Store.nama(r.Diinput_Oleh)) : ''}</td></tr>`; }).join(''); })()}
+      <div class="card"><div class="card-h"><h3>Riwayat Realisasi Fisik & Keuangan</h3><p>${esc(skLabel(sk))}</p></div><div class="tw"><table class="t"><thead><tr><th>Bulan</th><th class="n">Rencana Fisik</th><th class="n">Real. Fisik</th><th class="c">Deviasi</th><th class="n">Rencana Keu. Kum.</th><th class="n">Real. Bulan (Rp)</th><th class="n">Kumulatif (Rp)</th><th>SP2D</th><th>Status</th><th>Diinput</th></tr></thead><tbody>
+        ${(() => { let kum = 0; return [...Array(12).keys()].map((i) => { const m = i + 1, r = rows.find((x) => x.Bulan === m); if (r && Calc.counted(r)) kum += num(r.Realisasi_Keuangan); const rf = Calc.rencana(sk, m); if (!r && m > Math.max(b, Calc.cutDefault())) return ''; const nSp = Calc.sp2dRows(sk.ID_SubKeg).filter((s) => s.Bulan === m && s.Status !== 'DITOLAK').length; return `<tr class="${m === b ? 'flag' : ''} click" data-bln="${m}"><td>${K.BULAN[i]}</td><td class="n">${pct(rf)}</td><td class="n">${r ? pct(r.Realisasi_Fisik) : '-'}</td><td class="c">${r ? devChip(r.Realisasi_Fisik - rf, amb) : ''}</td><td class="n">${fmtN((rf / 100) * num(sk.Pagu))}</td><td class="n">${r ? fmtN(r.Realisasi_Keuangan) : '-'}</td><td class="n">${r ? fmtN(kum) : ''}</td><td class="mini">${nSp ? chip(nSp + ' SP2D', 'info') : r && r.Sumber_Keuangan !== 'SP2D' && num(r.Realisasi_Keuangan) ? chip('lama · belum dipetakan', 'warn') : ''}</td><td>${r ? stChip(K.ST_REAL, r.Status) + (r._pending ? '<span class="sub">menyimpan…</span>' : '') : '<span class="mini">belum diinput</span>'}</td><td>${r ? esc(Store.nama(r.Diinput_Oleh)) : ''}</td></tr>`; }).join(''); })()}
       </tbody></table></div></div>`;
     const f = $('#fReal'), dev = $('#devHint'), kh = $('#keuHint');
-    const live = () => { const v = formVals(f); if (String(f.Realisasi_Fisik.value).trim() !== '') { const d = v.Realisasi_Fisik - ren; dev.innerHTML = `Deviasi terhadap rencana ${pct(ren)}: <b class="${d <= -amb ? 'c-err' : d < 0 ? 'c-warn' : 'c-ok'}">${sgn(d)}</b>${d <= -amb ? ' — wajib isi kendala & rencana aksi' : ''}`; } else dev.textContent = ''; const tot = prev.keu + v.Realisasi_Keuangan; kh.innerHTML = `Total akumulasi s.d. ${K.BULAN[b - 1]}: <b>${rp(tot)}</b> (${pct(num(sk.Pagu) ? (tot / num(sk.Pagu)) * 100 : 0)} dari pagu)`; };
+    const live = () => { const v = formVals(f); if (String(f.Realisasi_Fisik.value).trim() !== '') { const d = v.Realisasi_Fisik - ren; dev.innerHTML = `Deviasi terhadap rencana ${pct(ren)}: <b class="${d <= -amb ? 'c-err' : d < 0 ? 'c-warn' : 'c-ok'}">${sgn(d)}</b>${d <= -amb ? ' — wajib isi kendala & rencana aksi' : ''}`; } else dev.textContent = ''; const tot = prev.keu + keuBulan; kh.innerHTML = `Total akumulasi s.d. ${K.BULAN[b - 1]}: <b>${rp(tot)}</b> (${pct(num(sk.Pagu) ? (tot / num(sk.Pagu)) * 100 : 0)} dari pagu)`; };
     live(); f.oninput = live;
     body.onchange = (e) => { if (e.target.name === 'sk' || e.target.name === 'bulan') { st[e.target.name] = e.target.value; if (e.target.name === 'sk') st.bulan = 0; App.refresh(); } };
     body.onclick = (e) => {
+      if (klikSp2d(e, sk)) return;
+      if (e.target.closest('[data-sp-baru]')) { Pages.formSp2d(sk, null, { Tgl_SP2D: '' }); return; }
+      const pt = e.target.closest('[data-petakan]'); if (pt) { const r0 = rows.find((x) => x.Bulan === num(pt.dataset.petakan)); Pages.formSp2d(sk, null, { No_SP2D: r0.No_SP2D, Tgl_SP2D: r0.Tgl_SP2D, nilai: num(r0.Realisasi_Keuangan), dariLama: true, bulan: r0.Bulan, lama: num(r0.Realisasi_Keuangan) }); return; }
       const tr = e.target.closest('[data-bln]'); if (tr) { st.bulan = num(tr.dataset.bln); App.refresh(); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
       const sv = e.target.closest('[data-save]'); if (!sv) return;
       const ajukan = sv.dataset.save === 'ajukan';
       const v = validate(f, { Realisasi_Fisik: (x) => { if (String(f.Realisasi_Fisik.value).trim() === '') return 'Isi realisasi fisik kumulatif.'; if (x < 0 || x > 100) return 'Nilai 0–100%.'; if (x + 0.0001 < prev.fisik && ajukan) return 'Fisik kumulatif tidak boleh turun dari bulan sebelumnya (' + pct(prev.fisik) + ').'; return ''; },
-        Realisasi_Keuangan: (x) => { const lain = rows.filter((r) => r.Bulan !== b && r.Status !== 'DITOLAK').reduce((a, r) => a + num(r.Realisasi_Keuangan), 0); return x < 0 ? 'Tidak boleh negatif.' : lain + x > num(sk.Pagu) ? 'Total realisasi keuangan melebihi pagu (' + rp(sk.Pagu) + ').' : ''; },
         Kendala: (x, a) => (ajukan && a.Realisasi_Fisik - ren <= -amb && !x ? 'Deviasi melewati ambang — jelaskan kendalanya.' : '') });
       if (!v) return;
       const data = Object.assign({}, v, { ID_SubKeg: sk.ID_SubKeg, Tahun: S.tahun, Bulan: b, ajukan });
       const status = ajukan ? (isPIC ? 'TERVERIFIKASI' : 'DIAJUKAN') : 'DRAF';
-      const temp = Object.assign({}, data, { ID: row ? row.ID : undefined, Status: status, Diinput_Oleh: S.me.email, Tgl_Input: todayISO() }); delete temp.ajukan;
+      const temp = Object.assign({}, data, { ID: row ? row.ID : undefined, Status: status, Realisasi_Keuangan: keuBulan, Diinput_Oleh: S.me.email, Tgl_Input: todayISO() }); delete temp.ajukan;
       mutate('realisasi.simpan', data, { table: 'realisasi', temp, btn: sv, okMsg: ajukan ? (isPIC ? 'Realisasi disimpan & terverifikasi.' : 'Realisasi diajukan ke PIC.') : 'Draf disimpan.' });
     };
     const drop = $('#dropR'), inp = $('#fileR');
     if (drop) Upload.bind(drop, inp, (files) => Upload.kirim(files, { ID_SubKeg: sk.ID_SubKeg, ID_Kontrak: f.ID_Kontrak ? f.ID_Kontrak.value : '', Jenis_Dokumen: 'SP2D', Keterangan: 'Bukti realisasi ' + K.BULAN[b - 1] }, drop, true));
   },
+  /** Tab SP2D & Rekening: pagu per kode rekening (versi aktif) vs realisasi SP2D, realisasi lama yang belum dipetakan, daftar SP2D */
+  sp2d(body, st, bisa) {
+    if (!S.t.subkeg.length) { body.innerHTML = `<div class="card">${emptyBox('Belum ada sub kegiatan', 'Isi master DPA di menu Perencanaan Anggaran terlebih dahulu.')}</div>`; return; }
+    const sk = Store.get('subkeg', st.sk), rek = Calc.rekPagu(sk.ID_SubKeg), real = Calc.rekReal(sk.ID_SubKeg), sp = Calc.sp2dRows(sk.ID_SubKeg).slice().reverse();
+    const belum = Calc.belumPeta(sk.ID_SubKeg), tl = S.t.tindakLanjut.filter((t) => t.ID_SubKeg === sk.ID_SubKeg && Calc.tlBuka(t));
+    const kodeLain = Object.keys(real).filter((k) => !rek.some((r) => r.Kode_Rekening === k));
+    const totP = rek.reduce((a, r) => a + num(r.Pagu), 0), totR = Object.keys(real).reduce((a, k) => a + real[k], 0), adaSeb = rek.some((r) => r.Pagu_Sebelum !== '' && r.Pagu_Sebelum != null);
+    body.innerHTML = this.pilihSk(st, bisa, false, []) + `
+      ${tl.length ? `<div class="note err mb">${ic('flag', 'sm')}<div><b>${tl.length} tanda merah</b> — realisasi melebihi pagu aktif. <a href="#/tindaklanjut?sk=${esc(sk.ID_SubKeg)}">Lihat Tindak Lanjut Pagu</a></div></div>` : ''}
+      <div class="card mb"><div class="card-h"><h3>${ic('wallet', 'sm')}Pagu per kode rekening</h3><div class="acts">${sk.Jenis_Versi ? chip(K.VERSI[sk.Jenis_Versi] + (sk.Tgl_Penetapan ? ' · ' + tgl(sk.Tgl_Penetapan) : ''), 'info') : chip('Versi DPA belum tercatat', 'slate')}${Can.inputReal(sk) ? ` <button class="btn gold" data-sp-baru>${ic('add', 'sm')}Catat SP2D</button>` : ''}</div><p>Pagu dari rincian DPA versi aktif; realisasi = SP2D yang tidak ditolak.</p></div>
+        ${rek.length ? `<div class="tw"><table class="t"><thead><tr><th>Kode rekening</th><th style="min-width:240px">Uraian</th>${adaSeb ? '<th class="n">Pagu sebelum</th>' : ''}<th class="n">Pagu aktif</th><th class="n">Realisasi SP2D</th><th class="n">Sisa</th><th style="min-width:110px">Serapan</th></tr></thead><tbody>
+          ${rek.map((r) => { const v = real[r.Kode_Rekening] || 0, sisa = num(r.Pagu) - v, lebih = sisa < -0.5; return `<tr class="${lebih ? 'flag' : ''}"><td class="mono">${esc(r.Kode_Rekening)}</td><td>${esc(r.Uraian)}${r.Rutin === 'YA' ? ' ' + chip('rutin', 'teal') : ''}</td>${adaSeb ? `<td class="n mini">${r.Pagu_Sebelum === '' || r.Pagu_Sebelum == null ? '' : fmtN(r.Pagu_Sebelum)}</td>` : ''}<td class="n">${fmtN(r.Pagu)}</td><td class="n">${fmtN(v)}</td><td class="n ${lebih ? 'c-err' : ''}">${lebih ? ic('flag', 'sm') + ' ' : ''}${fmtN(sisa)}</td><td>${bar(num(r.Pagu) ? (v / num(r.Pagu)) * 100 : (v ? 100 : 0), lebih ? 'err' : 'gold')}</td></tr>`; }).join('')}
+          ${kodeLain.map((k) => `<tr class="flag"><td class="mono">${esc(k)}</td><td class="c-err">Tidak ada di DPA versi aktif</td>${adaSeb ? '<td></td>' : ''}<td class="n">0</td><td class="n">${fmtN(real[k])}</td><td class="n c-err">${fmtN(-real[k])}</td><td></td></tr>`).join('')}
+          </tbody><tfoot><tr><td colspan="${adaSeb ? 3 : 2}">Jumlah</td><td class="n">${fmtN(totP)}</td><td class="n">${fmtN(totR)}</td><td class="n">${fmtN(totP - totR)}</td><td></td></tr></tfoot></table></div>`
+          : `<div class="card-b"><div class="note warn">${ic('warn', 'sm')}<div>Rincian DPA Sub Kegiatan ini belum diimpor, jadi pagu per kode rekening tidak tersedia. SP2D tetap bisa dicatat dengan kode rekening yang diketik; yang dicek hanya pagu Sub Kegiatan (${rp(sk.Pagu)}).</div></div></div>`}</div>
+      ${belum.length ? `<div class="card mb"><div class="card-h"><h3>${ic('warn', 'sm')}Realisasi lama belum dipetakan ke kode rekening</h3><p>Dicatat sebelum v1.3.0 tanpa kode rekening. Nilainya tetap dihitung dalam realisasi Sub Kegiatan, tetapi belum masuk pagu per rekening. Petakan dengan mencatat SP2D-nya.</p></div><div class="tw"><table class="t light"><thead><tr><th>Bulan</th><th>No. SP2D lama</th><th class="n">Nilai lama</th><th class="n">Sudah dari SP2D</th><th class="n">Belum dipetakan</th><th></th></tr></thead><tbody>
+        ${belum.map((x) => `<tr><td>${K.BULAN[x.row.Bulan - 1]}</td><td class="mono">${esc(x.row.Sumber_Keuangan === 'SP2D' ? '' : x.row.No_SP2D || '-')}</td><td class="n">${fmtN(x.lama)}</td><td class="n">${x.row.Sumber_Keuangan === 'SP2D' ? fmtN(x.row.Realisasi_Keuangan) : '0'}</td><td class="n c-warn"><b>${fmtN(x.sisa)}</b></td><td class="acts">${Can.inputReal(sk) ? `<button class="btn sm" data-petakan="${x.row.Bulan}">${ic('receipt', 'sm')}Petakan</button>` : ''}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
+      <div class="card"><div class="card-h"><h3>${ic('receipt', 'sm')}Daftar SP2D (${sp.length})</h3><p>${esc(skLabel(sk))}</p></div>${sp.length ? tabelSp2d(sp, sk) : `<div class="card-b">${emptyBox('Belum ada SP2D', 'Catat SP2D beserta rincian kode rekeningnya. Realisasi keuangan bulanan terisi otomatis.')}</div>`}</div>`;
+    body.onchange = (e) => { if (e.target.name === 'sk') { st.sk = e.target.value; st.bulan = 0; App.refresh(); } };
+    body.onclick = (e) => {
+      if (klikSp2d(e, sk)) return;
+      if (e.target.closest('[data-sp-baru]')) { Pages.formSp2d(sk, null, {}); return; }
+      const pt = e.target.closest('[data-petakan]'); if (pt) { const x = belum.find((y) => y.row.Bulan === num(pt.dataset.petakan)); if (!x) return; const r0 = x.row, mm = String(r0.Bulan).padStart(2, '0');
+        Pages.formSp2d(sk, null, { No_SP2D: r0.Sumber_Keuangan === 'SP2D' ? '' : r0.No_SP2D, Tgl_SP2D: r0.Sumber_Keuangan === 'SP2D' ? '' : (r0.Tgl_SP2D || S.tahun + '-' + mm + '-01'), nilai: x.sisa, dariLama: true, bulan: r0.Bulan, lama: x.lama }); }
+    };
+  },
   verif(body, st) {
     const rows = S.t.realisasi.filter((r) => r.Status === 'DIAJUKAN' && Can.verifReal(Store.get('subkeg', r.ID_SubKeg))).sort((a, b) => a.Bulan - b.Bulan);
+    const sps = S.t.sp2d.filter((r) => r.Status === 'DIAJUKAN' && Can.verifReal(Store.get('subkeg', r.ID_SubKeg))).sort((a, b) => String(a.Tgl_SP2D).localeCompare(String(b.Tgl_SP2D)));
     const amb = num(S.settings.AMBANG_DEVIASI) || 5;
-    body.innerHTML = `<div class="card"><div class="card-h"><h3>Pengajuan menunggu verifikasi Anda</h3><p>Hanya PIC sub kegiatan (atau Admin) yang dapat memverifikasi.</p></div>${rows.length ? `<div class="tw"><table class="t"><thead><tr><th>Sub Kegiatan</th><th>Bulan</th><th class="n">Fisik</th><th class="c">Deviasi</th><th class="n">Keuangan (Rp)</th><th>SP2D</th><th>Uraian / Kendala</th><th>Diajukan</th><th></th></tr></thead><tbody>
+    body.innerHTML = `<div class="card mb"><div class="card-h"><h3>${ic('receipt', 'sm')}SP2D menunggu verifikasi (${sps.length})</h3><p>Periksa nomor, tanggal, dan rincian kode rekening. Hanya PIC sub kegiatan (atau Admin) yang dapat memverifikasi.</p></div>
+      ${sps.length ? `<div class="tw"><table class="t"><thead><tr><th>Sub Kegiatan</th><th>Tanggal</th><th>Nomor</th><th style="min-width:240px">Rincian</th><th class="n">Total (Rp)</th><th>Diajukan</th><th></th></tr></thead><tbody>${sps.map((s) => { const sk = Store.get('subkeg', s.ID_SubKeg) || {}; return `<tr><td style="min-width:200px"><b>${esc(sk.Nama_SubKegiatan)}</b><span class="sub mono">${esc(sk.Kode_SubKeg)}</span></td><td>${tgl(s.Tgl_SP2D)}</td><td class="mono">${esc(s.No_SP2D)}</td><td class="mini">${Calc.sp2dLines(s.ID_SP2D).map((l) => `<div><span class="mono">${esc(l.Kode_Rekening)}</span> · ${fmtN(l.Nilai)}</div>`).join('')}</td><td class="n"><b>${fmtN(s.Nilai_Total)}</b></td><td>${esc(Store.nama(s.Diinput_Oleh))}<span class="sub">${tgl(s.Tgl_Input)}</span></td><td class="acts"><button class="btn sm danger" data-sp-no="${esc(s.ID_SP2D)}">Tolak</button> <button class="btn sm pri" data-sp-ok="${esc(s.ID_SP2D)}">${ic('check', 'sm')}Setujui</button></td></tr>`; }).join('')}</tbody></table></div>` : `<div class="card-b"><p class="mini" style="margin:0">Tidak ada SP2D yang menunggu.</p></div>`}</div>
+      <div class="card"><div class="card-h"><h3>Realisasi fisik menunggu verifikasi Anda</h3><p>Hanya PIC sub kegiatan (atau Admin) yang dapat memverifikasi.</p></div>${rows.length ? `<div class="tw"><table class="t"><thead><tr><th>Sub Kegiatan</th><th>Bulan</th><th class="n">Fisik</th><th class="c">Deviasi</th><th class="n">Keuangan (Rp)</th><th>SP2D</th><th>Uraian / Kendala</th><th>Diajukan</th><th></th></tr></thead><tbody>
       ${rows.map((r) => { const sk = Store.get('subkeg', r.ID_SubKeg) || {}; const d = r.Realisasi_Fisik - Calc.rencana(sk, r.Bulan); return `<tr><td style="min-width:200px"><b>${esc(sk.Nama_SubKegiatan)}</b><span class="sub mono">${esc(sk.Kode_SubKeg)}</span></td><td>${K.BULAN[r.Bulan - 1]}</td><td class="n">${pct(r.Realisasi_Fisik)}</td><td class="c">${devChip(d, amb)}</td><td class="n">${fmtN(r.Realisasi_Keuangan)}</td><td class="mono">${esc(r.No_SP2D || '-')}</td><td style="min-width:220px">${esc(r.Uraian || '-')}${r.Kendala ? `<span class="sub c-warn">Kendala: ${esc(r.Kendala)}</span>` : ''}</td><td>${esc(Store.nama(r.Diinput_Oleh))}<span class="sub">${tgl(r.Tgl_Input)}</span></td><td class="acts"><button class="btn sm danger" data-tolak="${esc(r.ID)}">Tolak</button> <button class="btn sm pri" data-ok="${esc(r.ID)}">${ic('check', 'sm')}Setujui</button></td></tr>`; }).join('')}</tbody></table></div>` : `<div class="empty">${ic('check')}<b>Tidak ada pengajuan</b><div>Semua realisasi sudah diverifikasi.</div></div>`}</div>`;
     body.onclick = async (e) => {
+      if (klikSp2d(e, {})) return;
       const ok = e.target.closest('[data-ok]'), no = e.target.closest('[data-tolak]'); if (!ok && !no) return;
       const id = (ok || no).dataset.ok || (ok || no).dataset.tolak; const r = Store.get('realisasi', id);
       let catatan = '';
@@ -523,6 +692,56 @@ Pages.add({
   }
 });
 
+/* =====================================================================
+   4b. TINDAK LANJUT PAGU (v1.3.0) — tanda merah realisasi di atas pagu aktif
+   ===================================================================== */
+Pages.add({
+  id: 'tindaklanjut', title: 'Tindak Lanjut Pagu', icon: 'flag', nav: true, group: 'Menu Utama', short: 'Tanda Merah', after: 'realisasi',
+  badge() { return Can.role('ADMIN', 'PEJABAT') ? Calc.tlTerbuka().length : 0; },
+  render(el, q, st) {
+    st.f = q.f || st.f || 'BUKA'; st.b = st.b || ''; if (q.sk) st.sk = q.sk;
+    const semua = S.t.tindakLanjut.filter((r) => Calc.tlLihat(r));
+    const list = semua.filter((r) => (st.f === 'SEMUA' || (st.f === 'BUKA' ? Calc.tlBuka(r) : r.Status === st.f)) && (!st.b || sameBidang((Store.get('subkeg', r.ID_SubKeg) || {}).Bidang, st.b)) && (!st.sk || r.ID_SubKeg === st.sk))
+      .sort((a, b) => (Calc.tlBuka(b) - Calc.tlBuka(a)) || String(b.Tgl_Muncul).localeCompare(String(a.Tgl_Muncul)));
+    const buka = semua.filter(Calc.tlBuka), selisih = buka.reduce((a, r) => a + num(r.Selisih), 0);
+    const skF = st.sk ? Store.get('subkeg', st.sk) : null;
+    el.innerHTML = ph({ eyebrow: 'Pengendalian Pagu', title: 'Tindak Lanjut Pagu', desc: 'Kode rekening yang realisasi SP2D-nya melebihi pagu aktif, misalnya setelah DPA Pergeseran/Perubahan menurunkan pagu. Penetapan tetap dicatat apa adanya; tanda merah ditindaklanjuti PPK.' }) +
+      `<div class="grid g4 mb">${kpi({ l: 'Tanda merah terbuka', i: 'flag', v: buka.length + ' <small>rekening</small>', s: 'Cek SP2D / menunggu penetapan' })}${kpi({ l: 'Total kelebihan', i: 'wallet', gold: true, v: rpS(selisih), title: rp(selisih), s: 'Realisasi − pagu aktif' })}
+        ${kpi({ l: 'Diterima dengan alasan', i: 'verified', v: semua.filter((r) => r.Status === 'DITERIMA').length, s: 'Setelah DPA Perubahan' })}${kpi({ l: 'Selesai', i: 'check', v: semua.filter((r) => r.Status === 'SELESAI').length, s: 'Selesai otomatis saat angka sesuai' })}</div>
+      <div class="card"><div class="card-h"><h3>${ic('flag', 'sm')}Daftar tanda merah</h3><div class="acts" style="flex-wrap:wrap;gap:8px">${selectHtml('f', [['BUKA', 'Terbuka'], ['CEK_SP2D', 'Cek SP2D'], ['MENUNGGU_PENETAPAN', 'Menunggu penetapan'], ['DITERIMA', 'Diterima dengan alasan'], ['SELESAI', 'Selesai'], ['SEMUA', 'Semua']], st.f, 'style="width:auto;min-width:170px" aria-label="Status"')}${selectHtml('b', optBidang(), st.b, 'style="width:auto;min-width:170px" aria-label="Bidang"')}${skF ? ` <button class="btn sm" data-semua-sk>${esc(skF.Kode_SubKeg)} ✕</button>` : ''}</div>
+        <p>Tanda selesai otomatis bila realisasi tidak lagi melebihi pagu (koreksi SP2D atau penetapan berikutnya). "Diterima dengan alasan" hanya setelah DPA Perubahan Sub Kegiatan itu tercatat. Riwayat tidak dihapus.</p></div>
+        ${list.length ? `<div class="tw"><table class="t"><thead><tr><th style="min-width:220px">Sub Kegiatan</th><th style="min-width:220px">Kode rekening</th><th class="n">Pagu aktif</th><th class="n">Realisasi</th><th class="n">Kelebihan</th><th>Status</th><th>Muncul</th><th></th></tr></thead><tbody>
+          ${list.map((r) => { const sk = Store.get('subkeg', r.ID_SubKeg) || {}; return `<tr class="${Calc.tlBuka(r) ? 'flag' : ''}"><td><b>${esc(sk.Nama_SubKegiatan || r.ID_SubKeg)}</b><span class="sub"><span class="mono">${esc(sk.Kode_SubKeg || '')}</span> · ${esc(sk.Bidang || '-')}</span></td>
+            <td>${r.Kode_Rekening ? `<span class="mono">${esc(r.Kode_Rekening)}</span><span class="sub">${esc(r.Uraian_Rekening)}</span>` : '<b>Total Sub Kegiatan</b>'}</td><td class="n">${fmtN(r.Pagu)}</td><td class="n">${fmtN(r.Realisasi)}</td><td class="n ${num(r.Selisih) > 0 ? 'c-err' : ''}"><b>${fmtN(r.Selisih)}</b></td>
+            <td>${stChip(K.ST_TL, r.Status)}${r.Status === 'DITERIMA' && r.Alasan ? `<span class="sub">${esc(DpaPilih.pot(r.Alasan, 80))}</span>` : ''}</td><td class="mini" style="min-width:110px">${tgl(String(r.Tgl_Muncul).slice(0, 10))}<span class="sub">${esc(r.Pemicu)}</span></td>
+            <td class="acts" style="white-space:nowrap">${Calc.tlBuka(r) || r.Status === 'DITERIMA' ? (Can.tindakLanjut(sk) ? `<button class="btn sm pri" data-tl="${esc(r.ID)}">${ic('edit', 'sm')}Tindak lanjut</button> ` : '') : ''}<a class="btn ghost icon" href="#/realisasi?tab=sp2d&sk=${esc(r.ID_SubKeg)}" title="Lihat SP2D & pagu rekening">${ic('receipt', 'sm')}</a><button class="btn ghost icon" data-riw="${esc(r.ID)}" title="Riwayat">${ic('review', 'sm')}</button></td></tr>`; }).join('')}</tbody></table></div>`
+          : `<div class="empty">${ic('check')}<b>${st.f === 'BUKA' ? 'Tidak ada tanda merah terbuka' : 'Tidak ada data'}</b><div>Realisasi semua kode rekening masih di dalam pagu aktif.</div></div>`}</div>`;
+    el.onchange = (e) => { if (e.target.name === 'f' || e.target.name === 'b') { st[e.target.name] = e.target.value; App.refresh(); } };
+    el.onclick = (e) => {
+      if (e.target.closest('[data-semua-sk]')) { st.sk = ''; history.replaceState(null, '', '#/tindaklanjut'); App.refresh(); return; }
+      const rw = e.target.closest('[data-riw]'); if (rw) { const r = Store.get('tindakLanjut', rw.dataset.riw); modal({ title: 'Riwayat tanda merah', icon: 'review', body: `<p class="mini">${esc((Store.get('subkeg', r.ID_SubKeg) || {}).Kode_SubKeg || '')} · ${esc(r.Kode_Rekening || 'Total Sub Kegiatan')}</p><pre style="white-space:pre-wrap;font:inherit;margin:0">${esc(r.Riwayat || '-')}</pre>` }); return; }
+      const b = e.target.closest('[data-tl]'); if (b) Pages.formTL(Store.get('tindakLanjut', b.dataset.tl));
+    };
+  }
+});
+Pages.formTL = function (r) {
+  const sk = Store.get('subkeg', r.ID_SubKeg) || {};
+  const adaPerubahan = S.t.versiAnggaran.some((v) => v.ID_SubKeg === r.ID_SubKeg && v.Jenis === 'PERUBAHAN' && v.Status !== 'DIBATALKAN');
+  const opsi = [['CEK_SP2D', 'Cek SP2D', 'Periksa nomor & nilai SP2D bersama bagian keuangan; bila salah input, PIC mengoreksi SP2D.'],
+    ['MENUNGGU_PENETAPAN', 'Menunggu penetapan', 'Kelebihan memang harus ditutup penetapan berikutnya (Pergeseran/Perubahan). Selesai otomatis saat penetapan diimpor.'],
+    ['DITERIMA', 'Diterima dengan alasan', adaPerubahan ? 'Kelebihan sah dan tidak dapat ditutup penetapan. Wajib alasan tertulis.' : 'Belum dapat dipilih: DPA Perubahan Sub Kegiatan ini belum tercatat.']];
+  const m = modal({ title: 'Tindak lanjut tanda merah', icon: 'flag', body: `<dl class="kv"><dt>Sub Kegiatan</dt><dd>${esc(skLabel(sk))}</dd><dt>Kode rekening</dt><dd>${esc(r.Kode_Rekening ? r.Kode_Rekening + ' — ' + r.Uraian_Rekening : 'Total Sub Kegiatan')}</dd><dt>Pagu aktif / realisasi</dt><dd>${rp(r.Pagu)} / ${rp(r.Realisasi)} · kelebihan <b class="c-err">${rp(r.Selisih)}</b></dd></dl>
+      <div class="lbl mt mb-s">Pilih tindak lanjut</div>${opsi.map((o) => `<label class="check" style="align-items:flex-start;margin-bottom:8px"><input type="radio" name="st" value="${o[0]}" ${r.Status === o[0] ? 'checked' : ''} ${o[0] === 'DITERIMA' && !adaPerubahan ? 'disabled' : ''}> <span><b>${o[1]}</b><span class="sub">${o[2]}</span></span></label>`).join('')}
+      ${fld({ name: 'Alasan', label: 'Alasan / catatan (wajib untuk "Diterima")', value: r.Alasan || '', type: 'textarea', rows: 3, max: 1000 })}`,
+    foot: '<button class="btn" data-x>Batal</button><button class="btn pri" data-y>Simpan</button>' });
+  m.el.querySelector('[data-y]').onclick = async (e) => {
+    const pilih = m.el.querySelector('[name=st]:checked'), alasan = m.el.querySelector('[name=Alasan]').value.trim();
+    if (!pilih) { toast('Pilih tindak lanjut.', 'warn'); return; }
+    if (pilih.value === 'DITERIMA' && alasan.length < 10) { toast('Tulis alasan penerimaan (minimal 10 karakter).', 'warn'); return; }
+    const res = await mutate('tindaklanjut.simpan', { ID: r.ID, Status: pilih.value, Alasan: alasan }, { table: 'tindakLanjut', btn: e.currentTarget, onOk: (d) => { (d.tindakLanjut || []).forEach((x) => Store.upsert('tindakLanjut', x)); } });
+    if (res.success) m.close();
+  };
+};
 /* =====================================================================
    5. EVALUASI TRIWULANAN BERJENJANG
    ===================================================================== */
@@ -1162,7 +1381,7 @@ Pages.formUser = function (u, prefill) {
     ${fld({ name: 'NIP', label: 'NIP', value: u.NIP, span: 's6', max: 18, ph: '18 digit' })}${fld({ name: 'Jabatan', label: 'Jabatan', value: u.Jabatan, span: 's6', ph: 'Kepala Seksi …' })}
     ${fld({ name: 'Role', label: 'Peran sistem', type: 'select', value: u.Role, span: 's6', opts: Object.keys(K.ROLE).map((r) => [r, K.ROLE[r]]) })}${fld({ name: 'Bidang', label: 'Bidang (pembatas hak tulis)', type: 'select', value: u.Bidang, span: 's6', opts: [['', 'Semua bidang']].concat(Store.bidangList().map((b) => [b, b])) })}
     ${fld({ name: 'Atasan_Email', label: 'Atasan langsung (pejabat penilai)', type: 'select', value: u.Atasan_Email, span: 's8', opts: atasanOpts })}${fld({ name: 'Aktif', label: 'Status akun', type: 'select', value: u.Aktif, span: 's4', opts: [['YA', 'Aktif'], ['TIDAK', 'Nonaktif']] })}</form>
-    <div class="note info mt">${ic('info', 'sm')}<div><b>Pejabat</b> menilai bawahan langsung & memverifikasi realisasi sub kegiatan yang PIC-nya dia. <b>Staf</b> menginput realisasi & arsip. <b>Bagian Program</b> mengelola DPA & memantau seluruh bidang.</div></div>`,
+    <div class="note info mt">${ic('info', 'sm')}<div><b>Pejabat Struktural / PPK</b> menilai bawahan langsung dan menindaklanjuti tanda merah di menu Tindak Lanjut Pagu (sesuai bidangnya; bidang "Semua" = seluruh bidang). <b>PIC Sub Kegiatan</b> (pejabat yang ditunjuk per sub kegiatan) memverifikasi realisasi & SP2D sub kegiatannya; bila PIC sendiri yang menginput, langsung terverifikasi. <b>Staf</b> menginput realisasi fisik, SP2D & arsip. <b>Bagian Program</b> mengelola DPA (impor versi Murni/Pergeseran/Perubahan) & memantau seluruh bidang.</div></div>`,
     foot: `${!baru && norm(u.Email) !== norm(S.me && S.me.email) ? `<button class="btn danger" data-del style="margin-right:auto">${ic('trash', 'sm')}Hapus</button>` : ''}<button class="btn" data-x>Batal</button><button class="btn pri" data-save>${ic('save', 'sm')}Simpan</button>` });
   const del = m.el.querySelector('[data-del]'); if (del) del.onclick = () => Pages.hapusUser(u, m);
   m.el.querySelector('[data-save]').onclick = async (e) => {
@@ -1216,6 +1435,7 @@ Pages.add({
       ${fld({ name: 'ALAMAT_INSTANSI', label: 'Alamat instansi (kop surat)', value: s.ALAMAT_INSTANSI, type: 'textarea', rows: 2 })}
       ${fld({ name: 'NPWP_INSTANSI', label: 'NPWP instansi', value: s.NPWP_INSTANSI, span: 's6', ph: '00.000.000.0-000.000', hint: 'Dipakai di Surat Pesanan, BAPP, dan BAST e-Katalog ({{NPWP_INSTANSI}})' })}${fld({ name: 'NAMA_UKPBJ', label: 'Tujuan surat ke UKPBJ (Pokja Pemilihan)', value: s.NAMA_UKPBJ, span: 's6', ph: 'Kepala UKPBJ', hint: 'Dipakai di Instruksi PPK ({{KEPADA}}) bila pemilihan dilaksanakan Pokja Pemilihan' })}
       ${fld({ name: 'WILAYAH_PAPUA', label: 'Lokasi pengadaan', value: s.WILAYAH_PAPUA || 'TIDAK', span: 's6', type: 'select', opts: [['TIDAK', 'Bukan wilayah Papua (batas nilai umum)'], ['YA', 'Wilayah Papua (batas percepatan pembangunan Papua)']], hint: 'Mengubah batas nilai Pengadaan Langsung, Penunjukan Langsung, dan pelaksana E-purchasing' })}
+      ${fld({ name: 'REKENING_RUTIN', label: 'Rekening belanja rutin (disaring dari pilihan Nama Paket pengadaan)', value: String(s.REKENING_RUTIN || '').split(';').join('\n'), type: 'textarea', rows: 4, hint: 'Satu pola per baris: potongan uraian rekening (mis. <i>Tagihan Listrik</i>, <i>Bahan-Bahan Bakar</i>) atau kode rekening/awalan kode (mis. <i>5.1.02.02.001.00061</i>). Sesuaikan dengan uraian di DPA Anda.' })}
       ${fld({ name: 'TAHUN_AKTIF', label: 'Tahun anggaran aktif', value: s.TAHUN_AKTIF, span: 's3', type: 'num' })}${fld({ name: 'TRIWULAN_AKTIF', label: 'Triwulan aktif', value: s.TRIWULAN_AKTIF, span: 's3', type: 'select', opts: [1, 2, 3, 4].map((t) => [t, 'Triwulan ' + K.ROMAWI[t]]) })}${fld({ name: 'AMBANG_DEVIASI', label: 'Ambang deviasi (%)', value: s.AMBANG_DEVIASI, span: 's3', type: 'num' })}${fld({ name: 'HARI_TUTUP_LAPORAN', label: 'Tanggal tutup laporan', value: s.HARI_TUTUP_LAPORAN, span: 's3', type: 'num' })}
       ${fld({ name: 'DAFTAR_BIDANG', label: 'Daftar bidang (pisahkan dengan ;)', value: s.DAFTAR_BIDANG, span: 's8' })}${fld({ name: 'MAKS_UNGGAH_MB', label: 'Maks. unggah (MB)', value: s.MAKS_UNGGAH_MB, span: 's4', type: 'num', hint: 'Disarankan ≤ 10 MB' })}
       ${fld({ name: 'NOTIF_EMAIL', label: 'Pengingat email harian', value: s.NOTIF_EMAIL, span: 's6', type: 'select', opts: [['TIDAK', 'Nonaktif'], ['YA', 'Aktif (jam 07.00 WITA)']] })}${fld({ name: 'NAMA_APLIKASI', label: 'Nama aplikasi', value: s.NAMA_APLIKASI, span: 's6' })}

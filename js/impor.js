@@ -101,6 +101,10 @@ const Impor = {
     const m1 = semua.match(/Tahun Anggaran\s+(\d{4})/i); if (m1) out.tahun = +m1[1];
     const mf = semua.match(/SIPD[^:]*:\s*dicetak pada\s+([^|]+)\|\s*([^|]+?)\s*(\||$)/i);
     if (mf) { out.dicetak = mf[1].trim(); out.tahap = mf[2].trim(); }
+    // v1.3.0: tanggal penandatanganan (mis. "Balikpapan,tanggal 31 Desember 2025") → saran tanggal penetapan
+    const BLN = ['januari', 'februari', 'maret', 'april', 'mei', 'juni', 'juli', 'agustus', 'september', 'oktober', 'november', 'desember'];
+    const mt = semua.match(/,\s*(?:tanggal\s+)?(\d{1,2})\s+(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s+(\d{4})/i);
+    out.tglDok = mt ? mt[3] + '-' + String(BLN.indexOf(mt[2].toLowerCase()) + 1).padStart(2, '0') + '-' + String(+mt[1]).padStart(2, '0') : '';
     const p0 = (T.find((t) => /^Sub Kegiatan$/i.test(t.s)) || T[0]).p;
     const LBL = ['Urusan Pemerintahan', 'Bidang Urusan', 'Unit Organisasi', 'Sub Unit Organisasi', 'Program', 'Kegiatan', 'Sub Kegiatan', 'SPM', 'Jenis Layanan', 'Sumber Pendanaan', 'Lokasi', 'Waktu Pelaksanaan', 'Kelompok Sasaran', 'Keluaran Sub Kegiatan', 'Keterangan'];
     const kv = {};
@@ -376,7 +380,17 @@ const Impor = {
       <div class="tw" style="max-height:360px;overflow:auto"><table class="t light"><thead><tr><th>Kode & Sub Kegiatan</th><th>Program / Kegiatan</th><th>Indikator keluaran</th><th class="n">Pagu (Rp)</th><th class="c">Rincian</th><th class="c">Cek total</th></tr></thead><tbody>
       ${ok.map((x) => { const s = x.h.subkeg, c = x.h.cek; const cocok = Math.abs(c.selisih) <= 1; return `<tr><td><span class="mono">${esc(s.Kode_SubKeg)}</span><span class="sub"><b>${esc(s.Nama_SubKegiatan)}</b></span><span class="sub mini">${esc(x.nama)}</span></td><td class="mini">${esc(s.Kode_Program + ' ' + s.Nama_Program)}<br>${esc(s.Kode_Kegiatan + ' ' + s.Nama_Kegiatan)}</td><td class="mini">${esc(s.Indikator || '-')}<br><b>${esc(fmtN(s.Target || 0, 2).replace(/,00$/, ''))} ${esc(s.Satuan || '')}</b></td><td class="n">${fmtN(s.Pagu)}${s.Pagu_Sebelum ? `<span class="sub">sebelum ${fmtN(s.Pagu_Sebelum)}</span>` : ''}</td><td class="c">${c.jumlahItem} item<span class="sub">${x.h.rincian.length} baris</span></td><td class="c">${cocok ? chip('Σ item = pagu', 'ok') : chip('selisih ' + fmtN(c.selisih, 2), 'err')}</td></tr>`; }).join('')}
       ${salah.map((x) => `<tr class="c-mut"><td colspan="6">${ic('warn', 'sm')} ${esc(x.nama)} — ${esc(x.err)}</td></tr>`).join('')}</tbody></table></div>
-      <p class="mini">Klik <b>Pindai</b> untuk memeriksa tanpa menyimpan. Sub Kegiatan dengan kode & tahun yang sama hanya diperbarui bila "Perbarui data yang sudah ada" dicentang.</p>`;
+      <p class="mini">Klik <b>Pindai</b> untuk memeriksa tanpa menyimpan. <b>DPA Murni</b>: Sub Kegiatan yang sudah ada hanya diganti bila "Perbarui data yang sudah ada" dicentang. <b>Pergeseran/Perubahan</b>: Sub Kegiatan yang sudah ada diperbarui bila nilai Sebelum sama dengan versi aktif; versi lama disimpan.</p>`;
+  },
+  /** v1.3.0: isian versi penetapan DPA (wajib) */
+  versiForm(list) {
+    const ok = list.filter((x) => x.h), seb = ok.some((x) => x.h.perubahan), tg = [...new Set(ok.map((x) => x.h.tglDok).filter(Boolean))];
+    return `<div class="card-b" style="padding:12px;border:1px solid var(--line);border-radius:var(--r)"><div class="lbl mb-s">${ic('review', 'sm')}Versi penetapan DPA <span class="req">*</span></div><div class="fg">
+      ${fld({ name: 'Jenis_Versi', label: 'Jenis dokumen', type: 'select', span: 's4', req: true, value: '', opts: [['', '— pilih —'], ['MURNI', 'DPA Murni'], ['PERGESERAN', 'DPA Pergeseran'], ['PERUBAHAN', 'DPA Perubahan']],
+        hint: seb ? 'Dokumen memiliki kolom Sebelum/Sesudah → Pergeseran atau Perubahan.' : 'Dokumen tanpa kolom Sebelum/Sesudah → DPA Murni.' })}
+      ${fld({ name: 'Tgl_Penetapan', label: 'Tanggal penetapan', type: 'date', span: 's4', req: true, value: tg.length === 1 ? tg[0] : '', hint: tg.length === 1 ? 'Dibaca dari dokumen — periksa kembali.' : 'Isi sesuai tanggal pada dokumen yang ditandatangani.' })}
+      ${fld({ name: 'No_Dokumen', label: 'Nomor dokumen (opsional)', span: 's4', ph: 'DPA/A.1/…' })}
+      <div class="f"><label class="check"><input type="checkbox" name="Ditetapkan"> Dokumen sudah ditandatangani dan bertanggal penetapan</label><div class="hint">Dokumen yang belum ditetapkan tidak dapat diimpor. Pagu aktif dan batas realisasi mengikuti penetapan terakhir.</div></div></div></div>`;
   },
 
   /* ---------- Dialog impor ---------- */
@@ -389,11 +403,13 @@ const Impor = {
       body: `<div class="note info mb">${ic('info', 'sm')}<div>Pilih berkas <b>Excel, Word, PDF, atau CSV</b>. Berkas dibaca di perangkat ini, ditampilkan sebagai pratinjau, lalu Anda mencocokkan kolomnya. Klik <b>Pindai</b> untuk melihat hasil tanpa menyimpan, lalu <b>Jalankan Impor</b>.</div></div>
         <div class="drop" id="impDrop">${ic('upload')}<b>Tarik berkas ke sini atau klik untuk memilih</b><span class="mini">.xlsx · .xls · .docx · .pdf · .csv${o.target === 'subkeg' ? ' — PDF RKA/DPA Rincian Belanja dari SIPD-RI dikenali otomatis; boleh pilih banyak berkas sekaligus' : ''}</span></div><input type="file" id="impFile" class="hidden" accept="${this.EXT}" ${o.target === 'subkeg' ? 'multiple' : ''}>
         ${o.sheetUrl ? `<div class="fg mt"><div class="f s8"><label>Atau tautan Google Sheets (hanya dibaca server)</label><input class="in" name="sheetUrl" placeholder="https://docs.google.com/spreadsheets/d/…"></div><div class="f s4"><label>Nama sheet</label><input class="in" name="namaSheet" placeholder="kosong = sheet pertama"></div></div>` : ''}
-        <div id="impPrev" class="mt"></div><div id="impRes" class="mt"></div>`,
+        <div id="impPrev" class="mt"></div><div id="impVersi" class="mt hidden"></div><div id="impRes" class="mt"></div>`,
       foot: `<label class="check" style="margin-right:auto"><input type="checkbox" name="timpa"> ${o.target === 'pengadaanItem' ? 'Ganti semua item yang ada' : 'Perbarui data yang sudah ada'}</label><button class="btn" data-x>Tutup</button><button class="btn" data-run="1">${ic('search', 'sm')}Pindai</button><button class="btn pri" data-run="0">${ic('upload', 'sm')}Jalankan Impor</button>` });
     const prev = $('#impPrev', m.el);
+    const vBox = $('#impVersi', m.el);
     const draw = () => {
-      if (st.sipd) { prev.innerHTML = this.sipdPreview(st.sipd); return; }
+      if (st.sipd) { prev.innerHTML = this.sipdPreview(st.sipd); if (!vBox.dataset.isi) { vBox.innerHTML = this.versiForm(st.sipd); vBox.dataset.isi = '1'; } vBox.classList.remove('hidden'); return; }
+      vBox.classList.add('hidden'); vBox.innerHTML = ''; delete vBox.dataset.isi;
       if (!st.data) { prev.innerHTML = ''; return; }
       const tb = st.data.tables[st.ti]; if (!tb) { prev.innerHTML = `<div class="note warn">${ic('warn', 'sm')}<div>Tidak ditemukan tabel di berkas ini.</div></div>`; return; }
       const rows = tb.rows, head = rows[st.hr] || [], ncol = Math.max(...rows.slice(st.hr, st.hr + 30).map((r) => r.length), 1);
@@ -452,12 +468,17 @@ const Impor = {
       const data = Object.assign({ target: o.target, dryRun: dry, timpa, tahun: S.tahun }, o.extra || {});
       if (st.sipd) {
         const ok = st.sipd.filter((x) => x.h); if (!ok.length) { toast('Tidak ada dokumen SIPD yang terbaca.', 'warn'); return; }
-        if (!dry && !(await confirmBox('Impor ' + ok.length + ' Sub Kegiatan beserta rincian belanjanya?' + (timpa ? ' Sub Kegiatan yang sudah ada akan diperbarui dan rinciannya diganti.' : ''), { ok: 'Jalankan' }))) return;
-        b.classList.add('busy'); const r = await api('dpa.imporSipd', { Tahun: S.tahun, dryRun: dry, timpa, daftar: ok.map((x) => ({ subkeg: x.h.subkeg, rincian: x.h.rincian })) }); b.classList.remove('busy');
+        const vv = formVals(vBox);
+        if (!vv.Jenis_Versi) { toast('Pilih jenis dokumen: DPA Murni, Pergeseran, atau Perubahan.', 'warn'); return; }
+        if (!vv.Tgl_Penetapan) { toast('Isi tanggal penetapan dokumen.', 'warn'); return; }
+        if (!vv.Ditetapkan) { toast('Centang konfirmasi bahwa dokumen sudah ditandatangani dan bertanggal penetapan.', 'warn'); return; }
+        const nmV = { MURNI: 'DPA Murni', PERGESERAN: 'DPA Pergeseran', PERUBAHAN: 'DPA Perubahan' }[vv.Jenis_Versi];
+        if (!dry && !(await confirmBox('Impor ' + ok.length + ' Sub Kegiatan sebagai <b>' + nmV + '</b> (ditetapkan ' + esc(tglP(vv.Tgl_Penetapan)) + ')?' + (vv.Jenis_Versi === 'MURNI' ? (timpa ? ' DPA Murni yang sudah ada akan diganti (versi lama disimpan di arsip).' : '') : ' Pagu Sub Kegiatan yang sudah ada diganti dengan nilai Sesudah; versi sebelumnya disimpan. Rekening yang realisasinya melebihi pagu baru masuk Tindak Lanjut Pagu.'), { ok: 'Jalankan' }))) return;
+        b.classList.add('busy'); const r = await api('dpa.imporSipd', { Tahun: S.tahun, dryRun: dry, timpa, Jenis_Versi: vv.Jenis_Versi, Tgl_Penetapan: vv.Tgl_Penetapan, No_Dokumen: vv.No_Dokumen, Ditetapkan: !!vv.Ditetapkan, daftar: ok.map((x) => ({ subkeg: x.h.subkeg, rincian: x.h.rincian, perubahan: !!x.h.perubahan })) }); b.classList.remove('busy');
         const box = $('#impRes', m.el);
         if (!r.success) { box.innerHTML = `<div class="note err">${ic('warn', 'sm')}<div>${esc(r.message)}</div></div>`; return; }
         const d = r.data || {}, rep = d.report || {};
-        box.innerHTML = `<div class="note ${dry ? 'info' : 'ok'}">${ic(dry ? 'info' : 'check', 'sm')}<div><b>${dry ? 'Hasil pindai — belum ada yang disimpan' : 'Impor SIPD selesai'}</b>: ${esc(rep.sumber || 0)} dokumen · ditambah <b>${esc(rep.ditambah || 0)}</b> · diperbarui <b>${esc(rep.diperbarui || 0)}</b> · dilewati ${esc(rep.dilewati || 0)} · ${esc(fmtN(d.rincian || 0))} baris rincian belanja</div></div>${(d.peringatan || []).length ? `<div class="note warn mt">${ic('warn', 'sm')}<div>${d.peringatan.map(esc).join('<br>')}</div></div>` : ''}`;
+        box.innerHTML = `<div class="note ${dry ? 'info' : 'ok'}">${ic(dry ? 'info' : 'check', 'sm')}<div><b>${dry ? 'Hasil pindai — belum ada yang disimpan' : 'Impor SIPD selesai'}</b>: ${esc(rep.sumber || 0)} dokumen · ditambah <b>${esc(rep.ditambah || 0)}</b> · diperbarui <b>${esc(rep.diperbarui || 0)}</b> · dilewati ${esc(rep.dilewati || 0)} · ${esc(fmtN(d.rincian || 0))} baris rincian belanja${d.versi ? ' · versi <b>' + esc(nmV) + '</b>' : ''}</div></div>${(d.peringatan || []).length ? `<div class="note warn mt">${ic('warn', 'sm')}<div>${d.peringatan.map(esc).join('<br>')}</div></div>` : ''}${(d.tandaMerah || []).length ? `<div class="note err mt">${ic('flag', 'sm')}<div><b>${d.tandaMerah.length} rekening realisasinya melebihi pagu ${esc(nmV)}</b>${dry ? ' (akan masuk Tindak Lanjut Pagu bila dijalankan)' : ' → <a href="#/tindaklanjut" data-x>buka Tindak Lanjut Pagu</a>'}:<br>${d.tandaMerah.map(esc).join('<br>')}</div></div>` : ''}`;
         if (!dry) { RB.reset(); if (o.onDone) o.onDone(d); Sync.run({ force: true }); }
         return;
       }

@@ -247,7 +247,7 @@ Pages.formPaket = function (p, prefill) {
     foot: `${!baru && Can.role('ADMIN', 'PEJABAT') && !p.ID_Kontrak ? `<button class="btn danger" data-del style="margin-right:auto">${ic('trash', 'sm')}Hapus</button>` : ''}<button class="btn" data-x>Batal</button><button class="btn pri" data-save>${ic('save', 'sm')}Simpan</button>` });
   /* v1.2.1: nama paket & kode rekening dari Rincian DPA; pagu ikut terisi bila masih kosong / masih hasil pilihan sebelumnya */
   const f = m.el.querySelector('form'); let paguAuto = null;
-  const drawDpa = (idSk) => DpaPilih.pasang(m.el.querySelector('#pDpa'), idSk, { input: f.Nama_Paket, labelPakai: 'sudah menjadi paket',
+  const drawDpa = (idSk) => DpaPilih.pasang(m.el.querySelector('#pDpa'), idSk, { input: f.Nama_Paket, labelPakai: 'sudah menjadi paket', saringRutin: true,
     pakai: new Set(S.t.pengadaan.filter((x) => x.ID_SubKeg === idSk && x.ID_Paket !== p.ID_Paket && x.Status !== 'BATAL').map((x) => norm(x.Nama_Paket))),
     isi: (o) => {
       f.Nama_Paket.value = o.uraian; f.Kode_Rekening.value = o.kode;

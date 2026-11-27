@@ -4,9 +4,10 @@
    router hash, kalkulasi realisasi, grafik SVG, ekspor, utilitas UI.
    ===================================================================== */
 'use strict';
-const APP_VERSION = '1.2.9';
+const APP_VERSION = '1.3.0';
 /** Riwayat versi frontend (terbaru di atas) — tampil di menu Profil → Riwayat Versi */
 const FE_RIWAYAT = [
+  { versi: '1.3.0', tanggal: '2026-11-27', catatan: ['SP2D dicatat per kode rekening: satu SP2D dapat membayar beberapa rekening, nomor SP2D tidak bisa dicatat dua kali, dan pagu dicek per rekening maupun per sub kegiatan. Realisasi keuangan bulanan kini dihitung dari SP2D (menu Realisasi → tab SP2D & Rekening).', 'Realisasi lama (sebelum v1.3.0) yang belum punya kode rekening tetap dihitung dan ditandai "belum dipetakan"; petakan lewat tombol Petakan ke SP2D.', 'Impor DPA SIPD wajib memilih jenis versi (Murni, Pergeseran, Perubahan), tanggal penetapan, dan konfirmasi dokumen sudah ditetapkan. Kolom Sebelum dicek terhadap versi aktif; Pergeseran tidak boleh menambah kode rekening; versi lama disimpan (riwayat versi di halaman Rincian Anggaran).', 'Menu baru Tindak Lanjut Pagu: rekening yang realisasinya melebihi pagu aktif (mis. setelah DPA Pergeseran/Perubahan menurunkan pagu) ditandai merah. PPK memilih Cek SP2D, Menunggu penetapan, atau Diterima dengan alasan (hanya setelah DPA Perubahan). Tanda selesai otomatis bila angka sudah sesuai; riwayat tidak dihapus.', 'Rekening belanja rutin (listrik, air, telepon, internet, BBM) tidak lagi muncul di pilihan Nama Paket pengadaan; daftar polanya di Pengaturan → Umum.', 'Peran Pejabat Struktural ditampilkan sebagai Pejabat Struktural / PPK; teks peran disesuaikan.'] },
   { versi: '1.2.9', tanggal: '2026-11-27', catatan: ['Dicocokkan ulang dengan naskah PerLKPP 2/2026 dan PerLKPP 3/2026: metode Tender Cepat; jenis Jasa Konsultansi Konstruksi (rujukan Lampiran II); konstruksi terintegrasi rancang dan bangun (Lampiran III: tanpa HPS, pagu pekerjaan, surat perjanjian, Pokja Pemilihan).', 'Paket E-purchasing: metode (pembelian langsung/negosiasi harga/mini kompetisi), Katalog atau Toko Daring, dan produk berharga tetap; peringatan batas Rp50 juta, pelaksana menurut nilai (Pejabat Pengadaan/PPK/Pokja), serta HPS/Referensi Harga tidak diwajibkan untuk pembelian langsung berharga tetap (Pasal 11, 13–17).', 'Pelaksana pemilihan otomatis menurut metode dan nilai (PerLKPP 3/2026 butir 1.4 & 5.2); Instruksi PPK ditujukan ke Pejabat Pengadaan atau UKPBJ ({{KEPADA}}); Pejabat Pengadaan tidak wajib bila pelaksananya Pokja/PPK.', 'Analisis pasar bila barang/jasa tersedia di Katalog tetapi tidak memakai E-purchasing (PerLKPP 2/2026 Pasal 12), dengan template bawaan baru.', 'Konstruksi: sifat pekerjaan dan masa pemeliharaan, peringatan bila kurang dari 6 bulan (permanen) atau 3 bulan (semi permanen). Rujukan BAST Akhir konstruksi butir 7.2 & 7.3.', 'Pengaturan: tujuan surat ke UKPBJ dan wilayah Papua (batas nilai percepatan pembangunan Papua).', 'Koreksi: peringatan PerLKPP 9/2021 mengikuti aturan peralihan Pasal 23; BAST/BAPP e-Katalog tidak lagi dirujuk ke PerLKPP 2/2026 dan tidak lagi dinyatakan pasti diterbitkan sistem Katalog.'] },
   { versi: '1.2.8', tanggal: '2026-11-26', catatan: ['Manajemen User: Admin dapat menghapus pengguna (ikon tempat sampah di daftar, atau tombol Hapus di formulir Ubah Pengguna).', 'Penghapusan ditolak bila pengguna masih menjadi atasan langsung, PIC Sub Kegiatan tahun berjalan, atau PPK/Pejabat Pengadaan paket yang belum berkontrak; alasannya ditampilkan. Akun sendiri dan Admin aktif terakhir tidak dapat dihapus.', 'Riwayat realisasi, evaluasi, dan log audit tidak diubah dan tetap menyimpan email pengguna yang dihapus.'] },
   { versi: '1.2.7', tanggal: '2026-11-26', catatan: ['Bila server sedang sibuk (kunci tulis dipakai proses lain), simpan/impor dicoba ulang otomatis hingga 2 kali (jeda 4 dan 8 detik). Unggah arsip, simpan template, buat dokumen, dan ganti/reset sandi tidak diulang otomatis.'] },
@@ -34,7 +35,7 @@ const CFG = (function () {
 
 /* ---------------- Konstanta domain ---------------- */
 const K = {
-  ROLE: { ADMIN: 'Administrator', PEJABAT: 'Pejabat Struktural', STAF: 'Staf / Operator', PROGRAM: 'Bagian Program (Monev)' },
+  ROLE: { ADMIN: 'Administrator', PEJABAT: 'Pejabat Struktural / PPK', STAF: 'Staf / Operator', PROGRAM: 'Bagian Program (Monev)' },
   BULAN: ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'],
   BLN: ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'],
   HARI: ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'],
@@ -46,6 +47,10 @@ const K = {
   PRED_CHIP: { SANGAT_BERHASIL: 'info', BERHASIL: 'ok', KURANG_BERHASIL: 'warn', TIDAK_BERHASIL: 'err' },
   ST_KONTRAK: { DRAF: ['Draf', 'slate'], AKTIF: ['Aktif', 'ok'], SELESAI: ['Selesai', 'info'], PUTUS: ['Putus', 'err'], TERLAMBAT: ['Terlambat', 'err'] },
   ST_REAL: { DRAF: ['Draf', 'slate'], DIAJUKAN: ['Diajukan', 'warn'], TERVERIFIKASI: ['Terverifikasi', 'ok'], DITOLAK: ['Ditolak', 'err'] },
+  /** v1.3.0 */
+  ST_TL: { CEK_SP2D: ['Cek SP2D', 'err'], MENUNGGU_PENETAPAN: ['Menunggu penetapan', 'warn'], DITERIMA: ['Diterima dengan alasan', 'info'], SELESAI: ['Selesai', 'ok'] },
+  VERSI: { MURNI: 'DPA Murni', PERGESERAN: 'DPA Pergeseran', PERUBAHAN: 'DPA Perubahan' },
+  ST_VERSI: { AKTIF: ['Aktif', 'ok'], ARSIP: ['Arsip', 'slate'], DIBATALKAN: ['Dibatalkan', 'err'] },
   ST_CL: { LENGKAP: ['Lengkap', 'ok'], BELUM: ['Belum Lengkap', 'warn'], TIDAK_PERLU: ['Tidak Perlu', 'slate'] },
   METODE: ['E-Purchasing / E-Katalog', 'Pengadaan Langsung', 'Penunjukan Langsung', 'Tender Cepat', 'Tender', 'Seleksi', 'Swakelola', 'Lainnya'],
   /** v1.2.9: rincian paket menurut PerLKPP 2/2026 & 3/2026 */
@@ -55,10 +60,11 @@ const K = {
   TERSEDIA_KATALOG: [['', 'Belum dicek'], ['YA', 'Ya, tersedia di Katalog Elektronik'], ['TIDAK', 'Tidak tersedia']],
   SIFAT_KONSTRUKSI: [['', '— pilih —'], ['PERMANEN', 'Permanen (pemeliharaan ≥ 6 bulan)'], ['SEMI_PERMANEN', 'Semi permanen (pemeliharaan ≥ 3 bulan)']],
   KEYS: { pengguna: 'Email', subkeg: 'ID_SubKeg', kontrak: 'ID_Kontrak', realisasi: 'ID', evaluasi: 'ID', arsip: 'ID_Dokumen',
-    checklistMaster: 'Kode', checklist: 'ID', template: 'ID_Template', dokumen: 'ID', pengadaan: 'ID_Paket', pengadaanItem: 'ID', riwayatVersi: 'Versi' },
+    checklistMaster: 'Kode', checklist: 'ID', template: 'ID_Template', dokumen: 'ID', pengadaan: 'ID_Paket', pengadaanItem: 'ID', riwayatVersi: 'Versi',
+    sp2d: 'ID_SP2D', sp2dRincian: 'ID', versiAnggaran: 'ID_Versi', tindakLanjut: 'ID', paguRek: 'ID' },
   NUM: ['Pagu', 'Target', 'Nilai_Kontrak', 'Realisasi_Fisik', 'Realisasi_Keuangan', 'Bulan', 'Tahun', 'Triwulan', 'Ukuran', 'Urutan',
     'Rencana_TW1', 'Rencana_TW2', 'Rencana_TW3', 'Rencana_TW4', 'Pagu_Paket', 'PPN_Persen', 'Nilai_HPS', 'Jangka_Waktu', 'Volume', 'Harga_Satuan', 'No',
-    'Pagu_Sebelum', 'Alokasi_Lalu', 'Alokasi_Depan', 'Jumlah_Rincian', 'Masa_Pemeliharaan_Bulan']
+    'Pagu_Sebelum', 'Alokasi_Lalu', 'Alokasi_Depan', 'Jumlah_Rincian', 'Masa_Pemeliharaan_Bulan', 'Nilai', 'Nilai_Total', 'Realisasi', 'Selisih', 'Keuangan_Lama']
 };
 const jenisNama = (k) => (K.JENIS.find((j) => j[0] === k) || [k, k || '-'])[1];
 
@@ -111,7 +117,7 @@ const Activity = { at: Date.now(), last: {},
 /* =====================================================================
    API
    ===================================================================== */
-const READ = /^(boot|ping|sistem\.status|arsip\.ambil|berkas\.ambil|progres\.publik)$/;
+const READ = /^(boot|ping|sistem\.status|arsip\.ambil|berkas\.ambil|progres\.publik|dpa\.rincian|versi\.rincian)$/;
 const _inflight = {}; let _writeEpoch = 0; let _busy = 0;
 function progress(on) {
   _busy += on ? 1 : -1; const b = $('#syncBar'); if (!b) return;
@@ -223,6 +229,8 @@ const Can = {
   inputReal(sk) { return Can.role('ADMIN', 'PEJABAT', 'STAF') && Can.bidangOk(sk && sk.Bidang); },
   verifReal(sk) { return !!S.me && (Can.admin() || (sk && norm(sk.PIC_Email) === norm(S.me.email))); },
   nilai(email) { return !!S.me && (S.me.bawahan || []).map(norm).indexOf(norm(email)) > -1; },
+  /** v1.3.0: tindak lanjut tanda merah oleh PPK (peran Pejabat) & Admin, sesuai bidang */
+  tindakLanjut(sk) { return Can.role('ADMIN', 'PEJABAT') && Can.bidangOk(sk && sk.Bidang); },
   arsip() { return Can.role('ADMIN', 'PEJABAT', 'STAF'); },
   hapusArsip() { return Can.role('ADMIN', 'PEJABAT'); },
   generate() { return Can.role('ADMIN', 'PEJABAT', 'STAF'); }
@@ -274,14 +282,44 @@ const Calc = {
   /** Keuangan per triwulan (Rp, bukan kumulatif) untuk satu sub kegiatan */
   keuTW(idSk, tw) { return Calc.realRows(idSk).filter((r) => Calc.counted(r) && Math.ceil(r.Bulan / 3) === tw).reduce((a, r) => a + num(r.Realisasi_Keuangan), 0); },
   fisikTW(idSk, tw) { const rows = Calc.realRows(idSk).filter((r) => Calc.counted(r) && r.Bulan <= tw * 3); return rows.length ? num(rows[rows.length - 1].Realisasi_Fisik) : 0; },
-  /** Pembayaran (SP2D) per kontrak: realisasi yang ditautkan; bila sub kegiatan hanya punya 1 kontrak,
-      realisasi tanpa tautan kontrak ikut dihitung untuk kontrak itu. */
+  /** Pembayaran per kontrak (v1.3.0): SP2D yang ditautkan + realisasi lama yang belum bersumber SP2D; bila sub kegiatan hanya punya 1 kontrak,
+      pembayaran tanpa tautan kontrak ikut dihitung untuk kontrak itu. */
   bayarKontrak(k) {
-    return Calc.memo('by_' + k.ID_Kontrak, () => {
+    return Calc.memo('by_' + k.ID_Kontrak, () => Calc.bayarList(k).reduce((a, x) => a + x.nilai, 0));
+  },
+  bayarList(k) {
+    return Calc.memo('bl_' + k.ID_Kontrak, () => {
       const satu = S.t.kontrak.filter((x) => x.ID_SubKeg === k.ID_SubKeg && x.Status !== 'PUTUS').length === 1;
-      return Calc.realRows(k.ID_SubKeg).filter((r) => Calc.counted(r) && (r.ID_Kontrak === k.ID_Kontrak || (satu && !r.ID_Kontrak))).reduce((a, r) => a + num(r.Realisasi_Keuangan), 0);
+      const cocok = (id) => id === k.ID_Kontrak || (satu && !id);
+      const sp = Calc.sp2dRows(k.ID_SubKeg).filter((s) => s.Status !== 'DITOLAK' && cocok(s.ID_Kontrak)).map((s) => ({ bulan: s.Bulan, no: s.No_SP2D, tgl: s.Tgl_SP2D, nilai: num(s.Nilai_Total), status: s.Status, sp2d: true }));
+      const lama = Calc.realRows(k.ID_SubKeg).filter((r) => r.Sumber_Keuangan !== 'SP2D' && Calc.counted(r) && num(r.Realisasi_Keuangan) && cocok(r.ID_Kontrak))
+        .map((r) => ({ bulan: r.Bulan, no: r.No_SP2D, tgl: r.Tgl_SP2D, nilai: num(r.Realisasi_Keuangan), status: r.Status, sp2d: false }));
+      return sp.concat(lama).sort((a, b) => a.bulan - b.bulan || String(a.tgl).localeCompare(String(b.tgl)));
     });
   },
+  /* ---------- v1.3.0: SP2D, pagu per kode rekening, tanda merah ---------- */
+  sp2dRows(idSk) { return Calc.memo('sp_' + idSk, () => S.t.sp2d.filter((s) => s.ID_SubKeg === idSk).sort((a, b) => String(a.Tgl_SP2D).localeCompare(String(b.Tgl_SP2D)) || String(a.No_SP2D).localeCompare(String(b.No_SP2D)))); },
+  sp2dLines(idSp) { return Calc.memo('sl_' + idSp, () => S.t.sp2dRincian.filter((l) => l.ID_SP2D === idSp)); },
+  /** Pagu per rekening daun versi aktif: [{Kode_Rekening, Uraian, Pagu, Pagu_Sebelum, Rutin}] */
+  rekPagu(idSk) { return Calc.memo('rp_' + idSk, () => S.t.paguRek.filter((r) => r.ID_SubKeg === idSk)); },
+  /** Realisasi SP2D aktif (bukan ditolak) per kode rekening */
+  rekReal(idSk) {
+    return Calc.memo('rr2_' + idSk, () => {
+      const aktif = {}; Calc.sp2dRows(idSk).forEach((s) => { if (s.Status !== 'DITOLAK') aktif[s.ID_SP2D] = 1; });
+      const o = {}; S.t.sp2dRincian.forEach((l) => { if (aktif[l.ID_SP2D]) o[l.Kode_Rekening] = (o[l.Kode_Rekening] || 0) + num(l.Nilai); }); return o;
+    });
+  },
+  /** Bulan dengan realisasi lama yang belum dipetakan ke SP2D: [{row, sisa}] */
+  belumPeta(idSk) {
+    return Calc.memo('bp_' + idSk, () => Calc.realRows(idSk).map((r) => {
+      const sisa = r.Sumber_Keuangan === 'SP2D' ? Math.max(0, num(r.Keuangan_Lama) - num(r.Realisasi_Keuangan)) : num(r.Realisasi_Keuangan);
+      return { row: r, sisa, lama: r.Sumber_Keuangan === 'SP2D' ? num(r.Keuangan_Lama) : num(r.Realisasi_Keuangan) };
+    }).filter((x) => x.sisa > 0.5 && x.row.Status !== 'DITOLAK'));
+  },
+  tlBuka(r) { return r.Status === 'CEK_SP2D' || r.Status === 'MENUNGGU_PENETAPAN'; },
+  /** Tindak lanjut terbuka yang terlihat pengguna (Admin/PROGRAM/PPK bidang 'Semua' = semua; lainnya bidangnya) */
+  tlLihat(r) { return Can.role('ADMIN', 'PROGRAM') || Can.bidangOk((Store.get('subkeg', r.ID_SubKeg) || {}).Bidang); },
+  tlTerbuka() { return Calc.memo('tlb', () => S.t.tindakLanjut.filter((r) => Calc.tlBuka(r) && Calc.tlLihat(r))); },
   /** Status kontrak turunan */
   kontrakStatus(k) { if (k.Status === 'AKTIF' && k.Tgl_Selesai && parseD(k.Tgl_Selesai) < parseD(todayISO())) return 'TERLAMBAT'; return k.Status || 'DRAF'; },
   sisaHari(k) { return k.Tgl_Selesai ? daysBetween(todayISO(), k.Tgl_Selesai) : null; },
@@ -318,6 +356,9 @@ const Calc = {
       const mySk = S.t.subkeg.filter((s) => norm(s.PIC_Email) === me);
       const tunggu = S.t.realisasi.filter((r) => r.Status === 'DIAJUKAN' && (Can.admin() ? true : mySk.some((s) => s.ID_SubKeg === r.ID_SubKeg)));
       if (tunggu.length) a.push({ t: 'warn', i: 'verified', h: tunggu.length + ' realisasi menunggu verifikasi', s: 'Periksa dan verifikasi input realisasi bulanan.', go: '#/realisasi?tab=verif' });
+      const tSp = S.t.sp2d.filter((r) => r.Status === 'DIAJUKAN' && (Can.admin() ? true : mySk.some((s) => s.ID_SubKeg === r.ID_SubKeg)));
+      if (tSp.length) a.push({ t: 'warn', i: 'verified', h: tSp.length + ' SP2D menunggu verifikasi', s: 'Periksa nomor, tanggal, dan rincian kode rekening SP2D.', go: '#/realisasi?tab=verif' });
+      if (Can.role('ADMIN', 'PEJABAT')) { const tl = Calc.tlTerbuka(); if (tl.length) a.push({ t: 'err', i: 'flag', h: tl.length + ' rekening melebihi pagu aktif', s: 'Tindak lanjut PPK: cek SP2D atau tunggu penetapan berikutnya.', go: '#/tindaklanjut' }); }
       const tw = num(S.settings.TRIWULAN_AKTIF) || Math.ceil((new Date().getMonth() + 1) / 3);
       const belum = (S.me.bawahan || []).filter((e) => !S.t.evaluasi.some((v) => norm(v.Email_Pejabat) === norm(e) && v.Triwulan === tw && v.Status === 'TERKUNCI'));
       if (belum.length) a.push({ t: 'info', i: 'review', h: 'Evaluasi TW ' + K.ROMAWI[tw] + ' belum dikunci', s: belum.map((e) => Store.nama(e)).slice(0, 3).join(', ') + (belum.length > 3 ? ' +' + (belum.length - 3) : ''), go: '#/evaluasi' });
@@ -330,6 +371,15 @@ const Calc = {
       }
       return a;
     });
+  }
+};
+
+/** v1.3.0: rekening belanja rutin (Pengaturan REKENING_RUTIN) — pola kode = awalan kode, selain itu potongan uraian */
+const Rutin = {
+  pola() { return String((S.settings && S.settings.REKENING_RUTIN) || '').split(/[;\n]/).map((x) => x.trim()).filter(Boolean); },
+  cocok(kode, uraian) {
+    kode = String(kode || '').trim(); const u = String(uraian || '').toLowerCase();
+    return Rutin.pola().some((p) => (/^\d+(\.\d+)*$/.test(p) ? kode === p || kode.indexOf(p + '.') === 0 : !!u && u.indexOf(p.toLowerCase()) > -1));
   }
 };
 
