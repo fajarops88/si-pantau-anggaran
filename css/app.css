@@ -420,3 +420,14 @@ textarea.in{height:auto;min-height:90px;padding:8px 10px;resize:vertical;line-he
 @media (max-width:720px){.alur-tahap .t{display:none}.alur-tahap li.on .t{display:inline}.alur-go{margin-left:0}.tahapan{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media print{.alur{display:none}}
 .mt-s{margin-top:12px}
+/* v1.4.3: tabel Checklist Kesiapan Audit & Arsip → Kelengkapan — dasar regulasi turun baris (sebelumnya label nowrap melebarkan tabel) */
+.chip.wrap{display:inline-block;white-space:normal;border-radius:8px;line-height:1.45;padding:3px 8px;max-width:100%;overflow-wrap:anywhere}
+.t th.cl-dasar,.t td.cl-dasar{width:34%;min-width:220px}
+table.t.cl-tbl{table-layout:fixed;min-width:900px}
+.cl-tbl col.c-no{width:44px}.cl-tbl col.c-item{width:21%}.cl-tbl col.c-dasar{width:28%}.cl-tbl col.c-st{width:17%}.cl-tbl col.c-doc{width:15%}.cl-tbl col.c-cat{width:15%}
+.cl-tbl .in{font-size:13px;padding-left:8px}.cl-tbl select.in{padding-right:24px;background-position:right 4px center}
+.cl-tbl th{white-space:normal}
+.cl-tbl td{padding:8px 10px;vertical-align:top;overflow-wrap:anywhere}
+.cl-tbl td.cl-dasar{width:auto;min-width:0}
+@media print{table.t.cl-tbl{min-width:0}}
+

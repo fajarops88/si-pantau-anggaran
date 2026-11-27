@@ -4,9 +4,10 @@
    router hash, kalkulasi realisasi, grafik SVG, ekspor, utilitas UI.
    ===================================================================== */
 'use strict';
-const APP_VERSION = '1.4.2';
+const APP_VERSION = '1.4.3';
 /** Riwayat versi frontend (terbaru di atas) — tampil di menu Profil → Riwayat Versi */
 const FE_RIWAYAT = [
+  { versi: '1.4.3', tanggal: '2026-11-28', catatan: ['Checklist Kesiapan Audit: lebar kolom tabel tetap dan teks dasar regulasi turun baris, sehingga kolom Status eviden, Tautan berkas, dan Catatan pengawas muat di layar laptop tanpa geser ke samping.', 'Arsip Dokumen → tab Kelengkapan: teks dasar regulasi juga turun baris.'] },
   { versi: '1.4.2', tanggal: '2026-11-28', catatan: ['Checklist Kesiapan Audit: butir baru Penilaian kinerja Penyedia di sistem pengadaan secara elektronik (Perpres 16/2018 s.t.d.t.d. Perpres 46/2025 Pasal 11 ayat (1) huruf m; PerLKPP 3/2026 Lampiran I–III bab VIII). Untuk kontrak swakelola, tandai Tidak Perlu.',
     'Master Checklist → Isi dasar regulasi terverifikasi menambahkan butir tersebut bila belum ada di master (dikenali dari jenis dokumennya, tidak ditambahkan dua kali), lalu klik Simpan Master.',
     'Jenis dokumen arsip baru: Penilaian Kinerja Penyedia (mis. tangkapan layar hasil penilaian). Bila diunggah, butir checklist otomatis Lengkap.'] },
