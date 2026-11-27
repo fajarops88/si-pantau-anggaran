@@ -4,9 +4,14 @@
    router hash, kalkulasi realisasi, grafik SVG, ekspor, utilitas UI.
    ===================================================================== */
 'use strict';
-const APP_VERSION = '1.3.1';
+const APP_VERSION = '1.4.0';
 /** Riwayat versi frontend (terbaru di atas) — tampil di menu Profil → Riwayat Versi */
 const FE_RIWAYAT = [
+  { versi: '1.4.0', tanggal: '2026-11-28', catatan: ['Alur terhubung: Perencanaan → Pengadaan → Kontrak → Realisasi → Evaluasi → Kesiapan Audit. Pilihan aktif (Sub Kegiatan, rekening, paket, kontrak, bulan) tampil di atas tiap halaman, terbawa saat pindah menu, dan ada tombol Lanjut ke tahap berikutnya.',
+    'Perencanaan: tabel rekening belanja → paket → kontrak → SP2D, dengan tombol Buat paket dari rekening. Pengadaan dan Kontrak menyaring daftar menurut Sub Kegiatan aktif; tautan paket membuka kontraknya langsung.',
+    'Kontrak: tahapan pekerjaan (SPK, SPMK, pelaksanaan, BA pemeriksaan, BAST, selesai), progres fisik per bulan (Catat progres), dan Catat SP2D yang mengisi kontrak serta rekening paket. Fisik Sub Kegiatan dihitung otomatis dari progres kontrak, ditimbang nilai kontrak.',
+    'Realisasi: pilihan Rekening dan Periode pada kartu parameter (menyaring pagu per rekening dan daftar SP2D, dan mengisi formulir SP2D; tanggal SP2D tetap diisi sendiri). Fisik bulan yang berasal dari progres kontrak tampil terkunci beserta rinciannya.',
+    'Evaluasi: tautan ke paket, kontrak, realisasi, dan kesiapan audit tiap Sub Kegiatan. Kesiapan Audit: ringkasan pemeriksaan fisik & keuangan (fisik vs pembayaran, BAST vs akhir kontrak) dan tanda data tercatat pada tiap item checklist.'] },
   { versi: '1.3.1', tanggal: '2026-11-27', catatan: ['Tidak ada perubahan fitur aplikasi. Versi disamakan dengan server v1.3.1 (data contoh lengkap 8 modul: Perencanaan, Pengadaan, Kontrak, Realisasi & SP2D, tahapan paket, Tindak Lanjut Pagu, Evaluasi Triwulanan, Checklist Kesiapan Audit) agar tidak muncul peringatan versi berbeda.'] },
   { versi: '1.3.0', tanggal: '2026-11-27', catatan: ['SP2D dicatat per kode rekening: satu SP2D dapat membayar beberapa rekening, nomor SP2D tidak bisa dicatat dua kali, dan pagu dicek per rekening maupun per sub kegiatan. Realisasi keuangan bulanan kini dihitung dari SP2D (menu Realisasi → tab SP2D & Rekening).', 'Realisasi lama (sebelum v1.3.0) yang belum punya kode rekening tetap dihitung dan ditandai "belum dipetakan"; petakan lewat tombol Petakan ke SP2D.', 'Impor DPA SIPD wajib memilih jenis versi (Murni, Pergeseran, Perubahan), tanggal penetapan, dan konfirmasi dokumen sudah ditetapkan. Kolom Sebelum dicek terhadap versi aktif; Pergeseran tidak boleh menambah kode rekening; versi lama disimpan (riwayat versi di halaman Rincian Anggaran).', 'Menu baru Tindak Lanjut Pagu: rekening yang realisasinya melebihi pagu aktif (mis. setelah DPA Pergeseran/Perubahan menurunkan pagu) ditandai merah. PPK memilih Cek SP2D, Menunggu penetapan, atau Diterima dengan alasan (hanya setelah DPA Perubahan). Tanda selesai otomatis bila angka sudah sesuai; riwayat tidak dihapus.', 'Rekening belanja rutin (listrik, air, telepon, internet, BBM) tidak lagi muncul di pilihan Nama Paket pengadaan; daftar polanya di Pengaturan → Umum.', 'Peran Pejabat Struktural ditampilkan sebagai Pejabat Struktural / PPK; teks peran disesuaikan.'] },
   { versi: '1.2.9', tanggal: '2026-11-27', catatan: ['Dicocokkan ulang dengan naskah PerLKPP 2/2026 dan PerLKPP 3/2026: metode Tender Cepat; jenis Jasa Konsultansi Konstruksi (rujukan Lampiran II); konstruksi terintegrasi rancang dan bangun (Lampiran III: tanpa HPS, pagu pekerjaan, surat perjanjian, Pokja Pemilihan).', 'Paket E-purchasing: metode (pembelian langsung/negosiasi harga/mini kompetisi), Katalog atau Toko Daring, dan produk berharga tetap; peringatan batas Rp50 juta, pelaksana menurut nilai (Pejabat Pengadaan/PPK/Pokja), serta HPS/Referensi Harga tidak diwajibkan untuk pembelian langsung berharga tetap (Pasal 11, 13–17).', 'Pelaksana pemilihan otomatis menurut metode dan nilai (PerLKPP 3/2026 butir 1.4 & 5.2); Instruksi PPK ditujukan ke Pejabat Pengadaan atau UKPBJ ({{KEPADA}}); Pejabat Pengadaan tidak wajib bila pelaksananya Pokja/PPK.', 'Analisis pasar bila barang/jasa tersedia di Katalog tetapi tidak memakai E-purchasing (PerLKPP 2/2026 Pasal 12), dengan template bawaan baru.', 'Konstruksi: sifat pekerjaan dan masa pemeliharaan, peringatan bila kurang dari 6 bulan (permanen) atau 3 bulan (semi permanen). Rujukan BAST Akhir konstruksi butir 7.2 & 7.3.', 'Pengaturan: tujuan surat ke UKPBJ dan wilayah Papua (batas nilai percepatan pembangunan Papua).', 'Koreksi: peringatan PerLKPP 9/2021 mengikuti aturan peralihan Pasal 23; BAST/BAPP e-Katalog tidak lagi dirujuk ke PerLKPP 2/2026 dan tidak lagi dinyatakan pasti diterbitkan sistem Katalog.'] },
@@ -62,10 +67,10 @@ const K = {
   SIFAT_KONSTRUKSI: [['', '— pilih —'], ['PERMANEN', 'Permanen (pemeliharaan ≥ 6 bulan)'], ['SEMI_PERMANEN', 'Semi permanen (pemeliharaan ≥ 3 bulan)']],
   KEYS: { pengguna: 'Email', subkeg: 'ID_SubKeg', kontrak: 'ID_Kontrak', realisasi: 'ID', evaluasi: 'ID', arsip: 'ID_Dokumen',
     checklistMaster: 'Kode', checklist: 'ID', template: 'ID_Template', dokumen: 'ID', pengadaan: 'ID_Paket', pengadaanItem: 'ID', riwayatVersi: 'Versi',
-    sp2d: 'ID_SP2D', sp2dRincian: 'ID', versiAnggaran: 'ID_Versi', tindakLanjut: 'ID', paguRek: 'ID' },
+    sp2d: 'ID_SP2D', sp2dRincian: 'ID', versiAnggaran: 'ID_Versi', tindakLanjut: 'ID', paguRek: 'ID', progresKontrak: 'ID' },
   NUM: ['Pagu', 'Target', 'Nilai_Kontrak', 'Realisasi_Fisik', 'Realisasi_Keuangan', 'Bulan', 'Tahun', 'Triwulan', 'Ukuran', 'Urutan',
     'Rencana_TW1', 'Rencana_TW2', 'Rencana_TW3', 'Rencana_TW4', 'Pagu_Paket', 'PPN_Persen', 'Nilai_HPS', 'Jangka_Waktu', 'Volume', 'Harga_Satuan', 'No',
-    'Pagu_Sebelum', 'Alokasi_Lalu', 'Alokasi_Depan', 'Jumlah_Rincian', 'Masa_Pemeliharaan_Bulan', 'Nilai', 'Nilai_Total', 'Realisasi', 'Selisih', 'Keuangan_Lama']
+    'Pagu_Sebelum', 'Alokasi_Lalu', 'Alokasi_Depan', 'Jumlah_Rincian', 'Masa_Pemeliharaan_Bulan', 'Nilai', 'Nilai_Total', 'Realisasi', 'Selisih', 'Keuangan_Lama', 'Fisik']
 };
 const jenisNama = (k) => (K.JENIS.find((j) => j[0] === k) || [k, k || '-'])[1];
 
@@ -347,6 +352,71 @@ const Calc = {
     if (!ls.length) return { pct: 0, n: 0, siap: 0 };
     let s = 0, siap = 0; ls.forEach((k) => { const c = Calc.checklist(k.ID_Kontrak); s += c.pct; if (c.pct >= 99.9) siap++; });
     return { pct: s / ls.length, n: ls.length, siap };
+  },
+  /* ---------- v1.4.0: progres fisik per kontrak (sama dengan server fisikOtomatis_) ---------- */
+  progresK(idK) { return Calc.memo('pk_' + idK, () => S.t.progresKontrak.filter((p) => p.ID_Kontrak === idK).sort((a, b) => a.Bulan - b.Bulan)); },
+  /** Fisik kumulatif kontrak s.d. bulan b (bawaan 12): { fisik, bulan } — bulan 0 = belum ada progres */
+  fisikK(idK, b) { let v = 0, bm = 0; Calc.progresK(idK).forEach((p) => { if (p.Bulan <= (b || 12) && p.Bulan >= bm) { bm = p.Bulan; v = num(p.Fisik); } }); return { fisik: v, bulan: bm }; },
+  bobotK(k) { return ['AKTIF', 'SELESAI', 'PUTUS'].indexOf(k.Status) > -1 && num(k.Nilai_Kontrak) > 0; },
+  /** Fisik Sub Kegiatan otomatis bulan b: { nilai, rincian: [{ k, fisik, bobot }], m0 } atau null bila bulan itu diisi manual */
+  fisikAuto(sk, b) {
+    const rows = S.t.progresKontrak.filter((p) => p.ID_SubKeg === sk.ID_SubKeg);
+    if (!rows.length) return null;
+    const m0 = Math.min.apply(null, rows.map((p) => p.Bulan));
+    if (b < m0) return null;
+    const ks = S.t.kontrak.filter((k) => k.ID_SubKeg === sk.ID_SubKeg && Calc.bobotK(k)), tot = ks.reduce((a, k) => a + num(k.Nilai_Kontrak), 0);
+    if (!tot) return null;
+    const rincian = ks.map((k) => ({ k, fisik: Calc.fisikK(k.ID_Kontrak, b).fisik, bobot: num(k.Nilai_Kontrak) / tot * 100 }));
+    const s = ks.reduce((a, k, i) => a + num(k.Nilai_Kontrak) * rincian[i].fisik, 0);
+    return { nilai: Math.round(s / tot * 100) / 100, rincian, m0 };
+  },
+  /** Kode rekening pertama paket yang ada di pagu rekening Sub Kegiatan */
+  rekPaket(p) {
+    if (!p) return '';
+    const kode = String(p.Kode_Rekening || '').split(/[,;\n]+/).map((x) => x.replace(/\s+/g, '')).filter(Boolean), ada = Calc.rekPagu(p.ID_SubKeg).map((r) => r.Kode_Rekening);
+    return kode.find((x) => ada.indexOf(x) > -1) || kode[0] || '';
+  },
+  /** Pembayaran yang DITAUTKAN ke kontrak (SP2D dengan ID_Kontrak ini + realisasi lama bertaut) — dasar pemeriksaan fisik vs pembayaran */
+  bayarTaut(k) {
+    return Calc.memo('bt_' + k.ID_Kontrak, () => {
+      const sp = Calc.sp2dRows(k.ID_SubKeg).filter((s) => s.Status !== 'DITOLAK' && s.ID_Kontrak === k.ID_Kontrak);
+      const lama = Calc.realRows(k.ID_SubKeg).filter((r) => r.Sumber_Keuangan !== 'SP2D' && Calc.counted(r) && num(r.Realisasi_Keuangan) && r.ID_Kontrak === k.ID_Kontrak);
+      return { n: sp.length, nilai: sp.reduce((a, s) => a + num(s.Nilai_Total), 0) + lama.reduce((a, r) => a + num(r.Realisasi_Keuangan), 0),
+        lain: Calc.sp2dRows(k.ID_SubKeg).filter((s) => s.Status !== 'DITOLAK' && !s.ID_Kontrak).length };
+    });
+  },
+  /** Ringkasan pemeriksaan fisik & keuangan satu kontrak (Kesiapan Audit) */
+  periksaK(k) {
+    return Calc.memo('pf_' + k.ID_Kontrak, () => {
+      const nilai = num(k.Nilai_Kontrak), fk = Calc.fisikK(k.ID_Kontrak), sk = Store.get('subkeg', k.ID_SubKeg);
+      const fisik = fk.bulan ? fk.fisik : (sk ? Calc.sk(sk, 12).fisik : 0);
+      const bt = Calc.bayarTaut(k), bayar = bt.nilai, bayarPct = nilai ? bayar / nilai * 100 : 0, st = Calc.kontrakStatus(k), temuan = [];
+      if (k.Status !== 'DRAF' && bayarPct > fisik + 0.5) temuan.push(['err', `Pembayaran ${pct(bayarPct)} melebihi progres fisik ${pct(fisik)}. Periksa dasar pembayaran (berita acara kemajuan pekerjaan).`]);
+      if (k.Tgl_BAST && k.Tgl_Selesai && k.Tgl_BAST > k.Tgl_Selesai) temuan.push(['warn', `BAST ${tgl(k.Tgl_BAST)} melewati akhir kontrak ${tgl(k.Tgl_Selesai)} (${daysBetween(k.Tgl_Selesai, k.Tgl_BAST)} hari). Periksa denda keterlambatan sesuai kontrak.`]);
+      if (!k.Tgl_BAST && st === 'TERLAMBAT') temuan.push(['warn', `Masa kontrak berakhir ${tgl(k.Tgl_Selesai)} (${daysBetween(k.Tgl_Selesai, todayISO())} hari lalu) dan BAST belum tercatat. Periksa pemberian kesempatan dan denda keterlambatan.`]);
+      if (k.Status === 'SELESAI' && !k.Tgl_BAST) temuan.push(['warn', 'Status Selesai tetapi tanggal BAST belum diisi di data kontrak.']);
+      if (k.Status !== 'PUTUS' && k.Status !== 'SELESAI' && fisik >= 100 && !k.Tgl_BAST) temuan.push(['info', 'Fisik sudah 100% tetapi BAST belum tercatat.']);
+      if (k.Status === 'PUTUS') temuan.push(['warn', `Kontrak diputus: prestasi fisik ${pct(fisik)}, dibayar ${pct(bayarPct)}. Pastikan pembayaran sesuai prestasi dan sanksi sudah diproses.`]);
+      if (k.Status !== 'DRAF' && !fk.bulan) temuan.push(['info', 'Progres fisik kontrak ini belum dicatat; angka fisik memakai realisasi Sub Kegiatan.']);
+      if (k.Status !== 'DRAF' && !bt.n && bt.lain) temuan.push(['info', `Belum ada SP2D yang ditautkan ke kontrak ini (${bt.lain} SP2D Sub Kegiatan tanpa kontrak). Bila ada yang merupakan pembayaran kontrak ini, tautkan agar pemeriksaan pembayaran akurat.`]);
+      return { nilai, fisik, bulanFisik: fk.bulan, bayar, bayarPct, selisih: bayarPct - fisik, sisa: nilai - bayar, temuan, st };
+    });
+  },
+  /** Data yang sudah tercatat di aplikasi untuk satu jenis dokumen checklist ('' = tidak ada data) */
+  dataCek(k, jenis) {
+    const sk = Store.get('subkeg', k.ID_SubKeg), p = k.ID_Paket ? Store.get('pengadaan', k.ID_Paket) : null;
+    switch (jenis) {
+      case 'RKA_DPA': return sk && (sk.Jenis_Versi || num(sk.Jumlah_Rincian)) ? (K.VERSI[sk.Jenis_Versi] || 'Rincian DPA') + (sk.Tgl_Penetapan ? ' ditetapkan ' + tgl(sk.Tgl_Penetapan) : ' tercatat') : '';
+      case 'HPS': return p && num(p.Nilai_HPS) ? 'HPS paket ' + rp(p.Nilai_HPS) : '';
+      case 'PENETAPAN': return k.Status !== 'DRAF' && k.Penyedia ? 'Penyedia: ' + k.Penyedia : '';
+      case 'SPK': return k.No_SPK ? k.No_SPK + (k.Tgl_SPK ? ' · ' + tgl(k.Tgl_SPK) : '') : '';
+      case 'SPMK': return k.Tgl_SPMK ? 'SPMK ' + tgl(k.Tgl_SPMK) : '';
+      case 'LAPORAN': { const pr = Calc.progresK(k.ID_Kontrak); return pr.length ? `Progres ${pr.length} bulan, terakhir ${pct(num(pr[pr.length - 1].Fisik))} (${K.BULAN[pr[pr.length - 1].Bulan - 1]})` : ''; }
+      case 'BAPHP': return k.Tgl_BAPHP ? 'BA pemeriksaan ' + tgl(k.Tgl_BAPHP) : '';
+      case 'BAST': return k.Tgl_BAST ? 'BAST ' + tgl(k.Tgl_BAST) : '';
+      case 'SPM': case 'SP2D': { const bt = Calc.bayarTaut(k); return bt.n ? `${bt.n} SP2D tertaut · ${rp(bt.nilai)}` : ''; }
+      default: return '';
+    }
   },
   /** Peringatan untuk lonceng notifikasi */
   alerts() {
@@ -664,6 +734,82 @@ async function exportXlsx(filename, sheets) {
     saveBlob(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }), filename + '.csv'); toast('Pustaka Excel tidak termuat — diunduh sebagai CSV.', 'warn');
   }
 }
+
+/* =====================================================================
+   ALUR TERHUBUNG (v1.4.0): Perencanaan → Pengadaan → Kontrak → Realisasi → Evaluasi → Kesiapan Audit
+   Pilihan aktif (Sub Kegiatan → Rekening → Paket → Kontrak → Bulan) disimpan per pengguna & tahun,
+   tampil sebagai jejak di atas tiap halaman alur, dan dibaca halaman lain sebagai pilihan bawaan.
+   ===================================================================== */
+const Alur = {
+  TAHAP: [['perencanaan', 'Perencanaan'], ['pengadaan', 'Pengadaan'], ['kontrak', 'Kontrak'], ['realisasi', 'Realisasi'], ['evaluasi', 'Evaluasi'], ['checklist', 'Kesiapan Audit']],
+  key() { return 'sp_alur_' + (S.me ? norm(S.me.email) : 'x') + '_' + S.tahun; },
+  get() {
+    const s = Object.assign({ sk: '', rek: '', paket: '', kontrak: '', bulan: 0 }, LS.get(this.key(), {}) || {});
+    if (s.sk && !Store.get('subkeg', s.sk)) { s.sk = ''; s.rek = ''; s.paket = ''; s.kontrak = ''; }
+    if (s.paket && !Store.get('pengadaan', s.paket)) s.paket = '';
+    if (s.kontrak && !Store.get('kontrak', s.kontrak)) s.kontrak = '';
+    s.bulan = Number(s.bulan) || 0;
+    return s;
+  },
+  /** Ubah pilihan; Sub Kegiatan lain → rekening/paket/kontrak dikosongkan dulu */
+  set(o) {
+    const s = this.get();
+    if (o.sk !== undefined && o.sk !== s.sk) { s.rek = ''; s.paket = ''; s.kontrak = ''; }
+    Object.keys(o).forEach((k) => { if (o[k] !== undefined && o[k] !== null) s[k] = o[k]; });
+    LS.set(this.key(), s);
+    return s;
+  },
+  reset() { LS.del(this.key()); },
+  /** Pilih kontrak beserta Sub Kegiatan, paket, dan rekening paketnya */
+  pilihKontrak(k) {
+    if (!k) return;
+    const p = k.ID_Paket ? Store.get('pengadaan', k.ID_Paket) : null, s = this.get();
+    this.set({ sk: k.ID_SubKeg });
+    this.set({ kontrak: k.ID_Kontrak, paket: k.ID_Paket || '', rek: (s.sk === k.ID_SubKeg && s.rek) || Calc.rekPaket(p) });
+  },
+  pilihPaket(p) {
+    if (!p) return;
+    this.set({ sk: p.ID_SubKeg });
+    this.set({ paket: p.ID_Paket, kontrak: p.ID_Kontrak || '', rek: Calc.rekPaket(p) });
+  },
+  href(id) {
+    const s = this.get();
+    if (id === 'perencanaan') return s.sk ? '#/perencanaan?sk=' + encodeURIComponent(s.sk) : '#/perencanaan';
+    if (id === 'pengadaan') return s.paket ? '#/pengadaan?id=' + encodeURIComponent(s.paket) : '#/pengadaan';
+    if (id === 'kontrak') return s.kontrak ? '#/kontrak?id=' + encodeURIComponent(s.kontrak) : '#/kontrak';
+    if (id === 'realisasi') return s.sk ? '#/realisasi?sk=' + encodeURIComponent(s.sk) : '#/realisasi';
+    if (id === 'checklist') return s.kontrak ? '#/checklist?k=' + encodeURIComponent(s.kontrak) : '#/checklist';
+    return '#/' + id;
+  },
+  bisa(id) { const p = Pages.map[id]; return !!p && (!p.roles || Can.role(...p.roles)); },
+  /** Jejak pilihan aktif + tahapan; cur = id halaman saat ini */
+  bar(cur) {
+    const s = this.get(), tahap = this.TAHAP.filter((x) => this.bisa(x[0])), i = tahap.findIndex((x) => x[0] === cur);
+    const sk = s.sk ? Store.get('subkeg', s.sk) : null, p = s.paket ? Store.get('pengadaan', s.paket) : null, k = s.kontrak ? Store.get('kontrak', s.kontrak) : null;
+    const rek = s.rek && sk ? (Calc.rekPagu(sk.ID_SubKeg).find((r) => r.Kode_Rekening === s.rek) || { Kode_Rekening: s.rek, Uraian: '' }) : null;
+    const c = (lbl, val, href, title) => `<a class="alur-c" href="${href}" title="${esc(title || val)}"><span>${esc(lbl)}</span><b>${esc(val)}</b></a>`;
+    const jejak = [];
+    if (sk) jejak.push(c('Sub Kegiatan', sk.Kode_SubKeg, this.href('perencanaan'), sk.Kode_SubKeg + ' ' + sk.Nama_SubKegiatan));
+    if (rek) jejak.push(c('Rekening', rek.Kode_Rekening, '#/realisasi?sk=' + encodeURIComponent(sk.ID_SubKeg) + '&tab=sp2d', rek.Kode_Rekening + ' ' + (rek.Uraian || '')));
+    if (p) jejak.push(c('Paket', p.Nama_Paket.length > 34 ? p.Nama_Paket.slice(0, 32) + '…' : p.Nama_Paket, this.href('pengadaan'), p.Nama_Paket));
+    if (k) jejak.push(c('Kontrak', k.No_SPK || k.Uraian_Pekerjaan || k.ID_Kontrak, this.href('kontrak'), (k.No_SPK || '') + ' ' + (k.Uraian_Pekerjaan || '')));
+    if (s.bulan) jejak.push(c('Bulan', K.BULAN[s.bulan - 1], this.href('realisasi')));
+    const lanjut = i > -1 && i < tahap.length - 1 ? tahap[i + 1] : null;
+    return `<nav class="alur no-print" aria-label="Alur pemantauan" data-alur>
+      <ol class="alur-tahap">${tahap.map((x, j) => `<li class="${j === i ? 'on' : j < i ? 'lewat' : ''}"><a href="${this.href(x[0])}"${j === i ? ' aria-current="step"' : ''}><span class="n">${j + 1}</span><span class="t">${esc(x[1])}</span></a></li>`).join('')}</ol>
+      <div class="alur-jejak">${jejak.length ? `<span class="alur-l">Pilihan aktif</span>${jejak.join('<span class="alur-s">›</span>')}<button type="button" class="btn sm ghost" data-alur-reset title="Kosongkan pilihan aktif">${ic('close', 'sm')}Kosongkan</button>`
+        : `<span class="alur-l">Belum ada pilihan aktif.</span><span class="mini">Mulai dari Perencanaan: buka satu Sub Kegiatan, lalu ikuti tombol Lanjut.</span>`}
+        ${lanjut ? `<a class="btn sm pri alur-go" href="${this.href(lanjut[0])}" data-alur-lanjut>Lanjut ke ${esc(lanjut[1])} ${ic('right', 'sm')}</a>` : ''}</div>
+    </nav>`;
+  }
+};
+document.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('[data-alur-reset]');
+  if (b) { e.preventDefault(); Alur.reset(); App.refresh(); return; }
+  /* tautan yang sekaligus memilih Sub Kegiatan/kontrak (mis. dari Evaluasi) */
+  const a = e.target.closest && e.target.closest('[data-alur-sk],[data-alur-k]');
+  if (a) { const k = a.getAttribute('data-alur-k'); if (k) Alur.pilihKontrak(Store.get('kontrak', k)); else Alur.set({ sk: a.getAttribute('data-alur-sk') }); }
+}, true);
 
 /* =====================================================================
    APLIKASI: router, navigasi, render
